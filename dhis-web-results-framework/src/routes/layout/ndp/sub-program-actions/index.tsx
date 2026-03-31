@@ -52,7 +52,7 @@ function Component() {
                 },
             ],
         }),
-        [data, onChange, ...Object.values(search)],
+        [data, onChange, search],
     );
 
     return <Results {...resultsProps} />;

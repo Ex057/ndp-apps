@@ -29,10 +29,9 @@ function Component() {
         async function loadObjectives() {
             const result = await queryDataElements({
                 ...search,
-                attributeValue: "outcome",
+                attributeValue: "output",
                 ndpVersion: search.v,
             });
-
             if (isMounted) setObjectives(result);
         }
         loadObjectives();
@@ -84,11 +83,11 @@ function Component() {
                     {
                         key: "objective",
                         options: uniqBy(
-                            objectives.map(({ GuoVDNEBAXA }) => ({
-                                value: GuoVDNEBAXA,
+                            objectives.map(({ LKWITZXQD9l }) => ({
+                                value: LKWITZXQD9l,
                                 label:
-                                    allOptionsMap.get(GuoVDNEBAXA) ||
-                                    GuoVDNEBAXA,
+                                    allOptionsMap.get(LKWITZXQD9l) ||
+                                    LKWITZXQD9l,
                             })),
                             "value",
                         ),

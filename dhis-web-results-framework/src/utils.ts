@@ -417,10 +417,7 @@ export const headerColors = {
     x: { backgroundColor: "#AAAAAA", color: "black" },
     a: { backgroundColor: "#10B981", color: "black" },
 } as const;
-export const findBackground = (
-    value: number,
-    isDescending: string | undefined,
-) => {
+export const findBackground = (value: number) => {
     if (isNaN(value)) {
         return {
             style: {
@@ -431,44 +428,46 @@ export const findBackground = (
         };
     }
     const { red, yellow, green } = PERFORMANCE_COLORS;
-    if (isDescending && isDescending === "true") {
-        if (value < red.end) {
-            return {
-                style: { backgroundColor: green.bg, color: green.fg },
-                performance: "a",
-            };
-        }
-        if (value >= yellow.start && value < yellow.end) {
-            return {
-                style: { backgroundColor: yellow.bg, color: yellow.fg },
-                performance: "m",
-            };
-        }
-        if (value >= green.start) {
-            return {
-                style: { backgroundColor: red.bg, color: red.fg },
-                performance: "n",
-            };
-        }
-    } else {
-        if (value < red.end) {
-            return {
-                style: { backgroundColor: red.bg, color: red.fg },
-                performance: "n",
-            };
-        }
-        if (value >= yellow.start && value < yellow.end) {
-            return {
-                style: { backgroundColor: yellow.bg, color: yellow.fg },
-                performance: "m",
-            };
-        }
-        if (value >= green.start) {
-            return {
-                style: { backgroundColor: green.bg, color: green.fg },
-                performance: "a",
-            };
-        }
+    // if (isDescending && isDescending === "true") {
+    //     if (value < red.end) {
+    //         return {
+    //             style: { backgroundColor: green.bg, color: green.fg },
+    //             performance: "a",
+    //         };
+    //     }
+    //     if (value >= yellow.start && value < yellow.end) {
+    //         return {
+    //             style: { backgroundColor: yellow.bg, color: yellow.fg },
+    //             performance: "m",
+    //         };
+    //     }
+    //     if (value >= green.start) {
+    //         return {
+    //             style: { backgroundColor: red.bg, color: red.fg },
+    //             performance: "n",
+    //         };
+    //     }
+    // } else {
+
+    // }
+
+    if (value < red.end) {
+        return {
+            style: { backgroundColor: red.bg, color: red.fg },
+            performance: "n",
+        };
+    }
+    if (value >= yellow.start && value < yellow.end) {
+        return {
+            style: { backgroundColor: yellow.bg, color: yellow.fg },
+            performance: "m",
+        };
+    }
+    if (value >= green.start) {
+        return {
+            style: { backgroundColor: green.bg, color: green.fg },
+            performance: "a",
+        };
     }
     return {
         style: {

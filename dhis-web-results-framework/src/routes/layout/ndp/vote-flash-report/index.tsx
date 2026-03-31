@@ -1,24 +1,24 @@
 import { DownloadOutlined } from "@ant-design/icons";
 import { createRoute } from "@tanstack/react-router";
 import {
-	Button,
-	Descriptions,
-	DescriptionsProps,
-	Flex,
-	Table,
-	TableProps,
-	Typography,
+    Button,
+    Descriptions,
+    DescriptionsProps,
+    Flex,
+    Table,
+    TableProps,
+    Typography,
 } from "antd";
 import React, { useState } from "react";
 import Performance from "../../../../components/performance";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { AnalyticsData } from "../../../../types";
 import {
-	createPerformanceColumns,
-	formatter,
-	getCellStyle,
-	PERFORMANCE_COLORS,
-	processByPerformance,
+    createPerformanceColumns,
+    formatter,
+    getCellStyle,
+    PERFORMANCE_COLORS,
+    processByPerformance,
 } from "../../../../utils";
 import { RootRoute } from "../../../__root";
 import { VoteFlashReportRoute } from "./route";
@@ -260,6 +260,18 @@ function Component() {
             render: (_, record) => formatter.format(record.absorptionRate),
             onCell: (record) => ({
                 style: getCellStyle(record.absorptionRate ?? 0),
+            }),
+        },
+        {
+            title: "Outcome Performance",
+            dataIndex: "outcomePerformance",
+            key: "outcomePerformance",
+            width: 200,
+            align: "center",
+            sorter: true,
+            render: (_, record) => formatter.format(record.outcomePerformance),
+            onCell: (record) => ({
+                style: getCellStyle(record.outcomePerformance ?? 0),
             }),
         },
         {
@@ -938,7 +950,9 @@ function Component() {
                 <Button
                     onClick={() => {
                         // Find the vote name from the votes array
-                        const currentVote = votes.find((vote) => vote.id === ou);
+                        const currentVote = votes.find(
+                            (vote) => vote.id === ou,
+                        );
                         const voteName = currentVote?.name || "";
 
                         const year = Number(pe.slice(0, 4));

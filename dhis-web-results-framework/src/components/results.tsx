@@ -32,6 +32,7 @@ import { legendItems } from "../utils";
 import AttachmentDownload from "./attachment-download";
 import PerformanceLegend from "./performance-legend";
 import { PDFBuilder } from "../pdf-builder";
+import { ExcelBuilder } from "../excel-builder";
 
 dayjs.extend(advancedFormat);
 dayjs.extend(quarterOfYear);
@@ -596,7 +597,6 @@ export function Results(props: ResultsProps) {
                         <Flex justify="flex-end" gap={10}>
                             <Button
                                 onClick={() => {
-                                    console.log("Are we here");
                                     const builder = new PDFBuilder({
                                         orientation: "landscape",
                                     });
@@ -608,20 +608,30 @@ export function Results(props: ResultsProps) {
                                             data,
                                             extractOutcomeComments,
                                         )
-                                        .download("Vote_Flash_Report.pdf");
+                                        .download(
+                                            `${new Date().toISOString()}-report.pdf`,
+                                        );
                                 }}
                                 icon={<DownloadOutlined />}
                             >
                                 Download PDF
                             </Button>
                             <Button
-                                onClick={() =>
-                                    downloadExcelFromColumns(
-                                        columns.get("target"),
-                                        data,
-                                        "performance-report.xlsx",
-                                    )
-                                }
+                                onClick={() => {
+                                    const builder = new ExcelBuilder();
+
+                                    builder
+
+                                        .addTableWithComments(
+                                            columns.get("target"),
+                                            data,
+                                            extractOutcomeComments,
+                                        )
+
+                                        .download(
+                                            `${new Date().toISOString()}-report.xlsx`,
+                                        );
+                                }}
                                 icon={<DownloadOutlined />}
                             >
                                 Download Excel
@@ -691,13 +701,6 @@ export function Results(props: ResultsProps) {
 
                             <Flex justify="flex-end" gap={10}>
                                 <Button
-                                    // onClick={() =>
-                                    //     downloadPdfFromColumns(
-                                    //         columns.get("performance"),
-                                    //         data,
-                                    //         "performance-report.pdf",
-                                    //     )
-                                    // }
                                     onClick={() => {
                                         const builder = new PDFBuilder({
                                             orientation: "landscape",
@@ -710,20 +713,30 @@ export function Results(props: ResultsProps) {
                                                 data,
                                                 extractOutcomeComments,
                                             )
-                                            .download("report.pdf");
+                                            .download(
+                                                `${new Date().toISOString()}-report.pdf`,
+                                            );
                                     }}
                                     icon={<DownloadOutlined />}
                                 >
                                     Download PDF
                                 </Button>
                                 <Button
-                                    onClick={() =>
-                                        downloadExcelFromColumns(
-                                            columns.get("performance"),
-                                            data,
-                                            "performance-report.xlsx",
-                                        )
-                                    }
+                                    onClick={() => {
+                                        const builder = new ExcelBuilder();
+
+                                        builder
+
+                                            .addTableWithComments(
+                                                columns.get("performance"),
+                                                data,
+                                                extractOutcomeComments,
+                                            )
+
+                                            .download(
+                                                `${new Date().toISOString()}-report.xlsx`,
+                                            );
+                                    }}
                                     icon={<DownloadOutlined />}
                                 >
                                     Download Excel

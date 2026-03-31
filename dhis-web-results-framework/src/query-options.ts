@@ -377,10 +377,8 @@ export const queryAnalytics = async ({
                                 de.aggregationType,
                                 de["descending indicator type"],
                             );
-                            const { performance, style } = findBackground(
-                                ratio,
-                                de["descending indicator type"],
-                            );
+                            const { performance, style } =
+                                findBackground(ratio);
                             if (isNaN(ratio)) {
                                 current.set(`${pe}performance`, "-");
                             } else {
