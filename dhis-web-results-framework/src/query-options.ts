@@ -118,6 +118,8 @@ export const queryDataElements = async ({
     }
     const requiredAttributes: string[] = [];
 
+    console.log(program, requiresProgram);
+
     if (requiresProgram && program && program !== "All") {
         requiredAttributes.push(program);
     } else if (requiresProgram) {

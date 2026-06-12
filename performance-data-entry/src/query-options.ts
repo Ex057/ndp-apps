@@ -4,14 +4,14 @@ import { UploadProps } from "antd";
 import { fromPairs } from "lodash";
 import { db } from "./db";
 import {
-	CompleteDataSetRegistrations,
-	DataSetValues,
-	DHIS2OrgUnit,
-	FileResource,
-	IDataElement,
-	IDataSet,
-	OptionSet,
-	Search
+    CompleteDataSetRegistrations,
+    DataSetValues,
+    DHIS2OrgUnit,
+    FileResource,
+    IDataElement,
+    IDataSet,
+    OptionSet,
+    Search,
 } from "./types";
 import { convertToAntdTree } from "./utils";
 
@@ -31,7 +31,7 @@ export const initialQueryOptions = (
                 configuration: {
                     resource: "dataStore/ndp-configurations",
                     params: {
-                        fields: "baseline,financialYears",
+                        fields: "baseline,financialYears,activeQuarters,activeFinancialYears",
                         paging: false,
                     },
                 },
@@ -60,13 +60,9 @@ export const initialQueryOptions = (
                     key: string;
                     baseline: string;
                     financialYears: string[];
+                    activeQuarters: string[];
+                    activeFinancialYears: string[];
                 }>;
-                // ndp3: {
-                //     options: Option[];
-                // };
-                // ndp4: {
-                //     options: Option[];
-                // };
                 options: { optionSets: OptionSet[] };
                 central: {
                     organisationUnits: Array<
@@ -75,19 +71,7 @@ export const initialQueryOptions = (
                 };
             };
 
-            const {
-                D5J653eYk73: programGoals,
-                fALlyU4UYhZ: programObjectives,
-                uV4fZlNvUsw: ndpVersions,
-                rcESKgz4zKM: programOutcomes,
-                jiBHfTa5VzB: programOutputs,
-                xQG5xfRYb50: strategicObjectives,
-                zVYsHjAeHlG: keyResultAreas,
-                xLQd0SrtSF8: programs,
-                MfNa8J3R2Uv: programInterventions,
-                xLQd0SrtSF8: ndp4,
-                nZffnMQwoWr: ndp3,
-            } = fromPairs(
+            const { xLQd0SrtSF8: ndp4, nZffnMQwoWr: ndp3 } = fromPairs(
                 options.optionSets.map((oset) => [oset.id, oset.options]),
             );
             const all: Map<string, string> = new Map(

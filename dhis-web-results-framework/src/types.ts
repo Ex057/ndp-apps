@@ -49,6 +49,11 @@ export const FlashReportSchema = z.object({
     ou: z.string(),
 });
 
+export const ProgramReportSchema = z.object({
+    pe: z.string().optional(),
+    program: z.string(),
+});
+
 export const DataElementGroupSetResponseSchema = z.object({
     pager: z.object({
         page: z.number(),

@@ -1,16 +1,21 @@
 import { createRoute, Link, useLoaderData } from "@tanstack/react-router";
-import { Flex, Input } from "antd";
+import { Flex } from "antd";
 import { maxBy } from "lodash";
 import { SettingsRoute } from "./route";
 
 import type { TableProps } from "antd";
 import { Table } from "antd";
-import React from "react";
-import { Option } from "../../types";
-import PeriodPicker from "../../components/period-picker";
 import dayjs from "dayjs";
+import React from "react";
+import PeriodPicker from "../../components/period-picker";
+import { Option } from "../../types";
 
-type DataType = Option & { baseline: string; financialYears: string[] };
+type DataType = Option & {
+    baseline: string;
+    financialYears: string[];
+    activeFinancialYears: string[];
+    activeQuarters: string[];
+};
 
 export const SettingsIndexRoute = createRoute({
     getParentRoute: () => SettingsRoute,
@@ -25,6 +30,10 @@ function Component() {
 
     const dataSource: DataType[] = ndpVersions.map((version) => ({
         ...version,
+        activeFinancialYears: [],
+        activeQuarters: [],
+        financialYears: [],
+        baseline: "",
         ...(configurations[version.code]?.data ?? {}),
     }));
     const latestNDP = maxBy(ndpVersions, (version) => {
@@ -40,14 +49,19 @@ function Component() {
         {
             title: "Baseline Financial Year",
             dataIndex: "baseline",
-            width: "46%",
+            width: "10%",
             render: (_, record) => {
                 return (
                     <PeriodPicker
                         period={record.baseline}
-                        onChange={(val) =>
-                            handleSave({ ...record, baseline: val })
-                        }
+                        onChange={(baseline) => {
+                            if (!Array.isArray(baseline) && baseline) {
+                                handleSave({
+                                    ...record,
+                                    baseline,
+                                });
+                            }
+                        }}
                         startingYear={
                             dayjs(
                                 record.baseline?.replace("July", "-07"),
@@ -61,17 +75,18 @@ function Component() {
         {
             title: "Financial Years",
             dataIndex: "financialYears",
-            width: "46%",
             render: (_, record) => {
                 return (
                     <PeriodPicker
-                        period={record.financialYears?.join(";")}
-                        onChange={(val) =>
-                            handleSave({
-                                ...record,
-                                financialYears: val.split(";"),
-                            })
-                        }
+                        period={record.financialYears}
+                        onChange={(financialYears) => {
+                            if (Array.isArray(financialYears)) {
+                                handleSave({
+                                    ...record,
+                                    financialYears,
+                                });
+                            }
+                        }}
                         startingYear={
                             dayjs(
                                 record.financialYears
@@ -81,6 +96,59 @@ function Component() {
                                 "YYYY-MM",
                             ).year() ?? dayjs().year()
                         }
+                        multiple
+                    />
+                );
+            },
+        },
+        {
+            title: "Active financial years",
+            dataIndex: "activeFinancialYears",
+            width: "20%",
+            render: (_, record) => {
+                return (
+                    <PeriodPicker
+                        period={record.activeFinancialYears}
+                        onChange={(activeFinancialYears) => {
+                            if (Array.isArray(activeFinancialYears)) {
+                                handleSave({
+                                    ...record,
+                                    activeFinancialYears,
+                                });
+                            }
+                        }}
+                        startingYear={
+                            dayjs(
+                                record.activeFinancialYears
+                                    ?.at(-1)
+                                    ?.replace("July", "-07") ??
+                                    dayjs().add(4, "year"),
+                                "YYYY-MM",
+                            ).year() ?? dayjs().year()
+                        }
+                        multiple
+                    />
+                );
+            },
+        },
+        {
+            title: "Active Quarter",
+            dataIndex: "activeQuarters",
+            width: "20%",
+            render: (_, record) => {
+                return (
+                    <PeriodPicker
+                        periodType="QUARTERLY"
+                        period={record.activeQuarters}
+                        onChange={(activeQuarters) => {
+                            if (Array.isArray(activeQuarters)) {
+                                handleSave({
+                                    ...record,
+                                    activeQuarters,
+                                });
+                            }
+                        }}
+                        startingYear={dayjs().year()}
                         multiple
                     />
                 );

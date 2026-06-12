@@ -357,6 +357,37 @@ function Component() {
                             ),
                             key: "/ndp/sub-program-actions",
                         },
+
+                        {
+                            title: (
+                                <Link
+                                    to="/ndp/program-flash-report"
+                                    search={(prev) => ({
+                                        ...prev,
+                                        v,
+                                        pe: undefined,
+                                        program: "",
+                                    })}
+                                    activeProps={{
+                                        style: {
+                                            color: "white",
+                                        },
+                                    }}
+                                    activeOptions={{
+                                        exact: true,
+                                        includeHash: false,
+                                        includeSearch: false,
+                                    }}
+                                    style={{
+                                        color: "#2B6998",
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    Consolidated Program Report
+                                </Link>
+                            ),
+                            key: "/ndp/program-flash-report",
+                        },
                     ],
                 },
                 {

@@ -139,8 +139,6 @@ function IndexRouteComponent() {
         });
     };
 
-    const [defaultPeriods, setDefaultPeriods] = React.useState<string[]>([]);
-
     const handleSelect = (selectedKeys: React.Key[]) => {
         const selectedKey = selectedKeys[0];
         if (selectedKey) {
@@ -180,17 +178,14 @@ function IndexRouteComponent() {
         );
         const baseline = conf?.baseline.split(" ").join("") ?? "2023July";
 
-        setDefaultPeriods(conf?.financialYears || []);
-
         navigate({
             search: (prev) => ({
                 ...prev,
                 dataSet: value,
                 baseline,
                 pe: undefined,
-                minPeriod: conf?.financialYears.at(0) ?? "2025July",
-                maxPeriod: conf?.financialYears.at(-1) ?? "2029July",
                 periodType: getPeriodType(dataSet),
+                ndp: conf?.key,
             }),
         });
     };
@@ -380,11 +375,7 @@ function IndexRouteComponent() {
                             <PeriodPicker
                                 periodType={periodType}
                                 onChange={onPeriodChange}
-                                minPeriod={minPeriod}
                                 period={pe}
-                                maxPeriod={maxPeriod}
-                                defaultPeriods={defaultPeriods}
-                                dataSet={dataSet}
                             />
                         </Form.Item>
                     </Flex>

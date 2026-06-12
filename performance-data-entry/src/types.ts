@@ -12,6 +12,7 @@ export const search = z.object({
     minPeriod: z.string().optional(),
     maxPeriod: z.string().optional(),
     periodType: z.enum(periodTypes).optional(),
+    ndp: z.string().optional(),
 });
 
 export type Search = z.infer<typeof search>;

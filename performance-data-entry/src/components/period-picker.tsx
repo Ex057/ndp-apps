@@ -1,12 +1,10 @@
-import { LeftOutlined, RightOutlined } from "@ant-design/icons";
-import {
-    createFixedPeriodFromPeriodId,
-    generateFixedPeriods,
-} from "@dhis2/multi-calendar-dates";
+import { createFixedPeriodFromPeriodId } from "@dhis2/multi-calendar-dates";
 
-import { Button, Flex, Select } from "antd";
-import React, { useMemo, useState } from "react";
+import { Select } from "antd";
+import React, { useMemo } from "react";
+import { RootRoute } from "../routes/__root";
 import { PeriodType } from "../types";
+import { IndexRoute } from "../routes";
 
 function moveNumbersToEnd(str: string): string {
     const numbers = str.match(/\d+/g) || [];
@@ -18,132 +16,109 @@ export default function PeriodPicker({
     period,
     onChange,
     periodType,
-    minPeriod,
-    maxPeriod,
-    defaultPeriods,
-    dataSet,
 }: {
     period?: string;
     onChange: (period: string | undefined) => void;
-    minPeriod: string | undefined;
-    maxPeriod: string | undefined;
     periodType?: PeriodType;
-    defaultPeriods: string[];
-    dataSet: string | undefined;
 }) {
-    const minYear = useMemo(
-        () => Number(minPeriod?.replace("July", "") ?? 2025),
-        [minPeriod],
-    );
-    const maxYear = useMemo(
-        () => Number(maxPeriod?.replace("July", "") ?? 2029),
-        [maxPeriod],
-    );
-    const [year, setYear] = useState<number>(minYear);
+    const { configuration } = RootRoute.useLoaderData();
+    const { ndp } = IndexRoute.useSearch();
 
     const availableFixedPeriods = useMemo(() => {
-        if (
-            periodType === undefined ||
-            minPeriod === undefined ||
-            maxPeriod === undefined
-        ) {
+        if (periodType === undefined || ndp === undefined) {
             return [];
         }
-        const minDate = createFixedPeriodFromPeriodId({
-            periodId: minPeriod,
-            calendar: "iso8601",
-        }).startDate;
 
-        const maxDate = createFixedPeriodFromPeriodId({
-            periodId: maxPeriod,
-            calendar: "iso8601",
-        }).endDate;
-        const periods = generateFixedPeriods({
-            year: periodType === "FYJUL" ? maxYear : year,
-            calendar: "iso8601",
-            periodType,
-            locale: "en",
-            yearsCount: periodType === "FYJUL" ? 5 : null,
-        });
+        const first = configuration.find(({ key }) => key === ndp);
 
-        if (periodType === "FYJUL" && defaultPeriods.length > 0) {
-            return defaultPeriods
+        if (
+            periodType === "FYJUL" &&
+            first &&
+            first.activeFinancialYears.length > 0
+        ) {
+            return first.activeFinancialYears
                 .map((p) => {
                     return createFixedPeriodFromPeriodId({
                         periodId: p,
                         calendar: "iso8601",
                     });
                 })
-                .map(({ name, id }) => ({
-                    label: moveNumbersToEnd(name),
-                    value: id,
-                }));
+                .map(({ name, id }) => {
+                    console.log(name, id);
+                    return {
+                        label: moveNumbersToEnd(name),
+                        value: id,
+                    };
+                });
+        } else if (
+            periodType === "QUARTERLY" &&
+            first &&
+            first.activeQuarters.length > 0
+        ) {
+            return first.activeQuarters
+                .map((p) => {
+                    return createFixedPeriodFromPeriodId({
+                        periodId: p,
+                        calendar: "iso8601",
+                    });
+                })
+                .map(({ name, id }) => {
+                    return {
+                        label: moveNumbersToEnd(name),
+                        value: id,
+                    };
+                });
         }
-        return periods.flatMap(({ name, id, startDate, endDate }) => {
-            if (startDate >= minDate && endDate <= maxDate) {
-                return {
-                    label: moveNumbersToEnd(name),
-                    value: id,
-                };
-            }
-            return [];
-        });
-    }, [
-        periodType,
-        maxYear,
-        minYear,
-        minPeriod,
-        maxPeriod,
-        defaultPeriods,
-        dataSet,
-        onChange,
-        year,
-    ]);
+
+        return [];
+    }, [periodType, onChange, ndp]);
 
     return (
-        <Flex gap="8px">
-            <Select
-                options={availableFixedPeriods}
-                allowClear
-                onChange={(val) => {
-                    onChange(val);
-                }}
-                showSearch
-                filterOption={(input, option) =>
-                    String(option?.label ?? "")
-                        .toLowerCase()
-                        .includes(input.toLowerCase())
-                }
-                style={{ flex: 1 }}
-                value={period}
-                placeholder="Select period"
-            />
-            <Flex>
-                <Button
-                    icon={<LeftOutlined />}
-                    onClick={() => {
-                        setYear((prev) => prev - 1);
-                        onChange(undefined);
-                    }}
-                    // disabled={
-                    //     year <= minYear ||
-                    //     (periodType === "FYJUL" && defaultPeriods.length > 0)
-                    // }
-										disabled
-                />
-                <Button
-                    icon={<RightOutlined />}
-                    onClick={() => {
-                        setYear((prev) => prev + 1);
-                        onChange(undefined);
-                    }}
-										disabled
-                    // disabled={
-                    //     year > maxYear ||
-                    //     (periodType === "FYJUL" && defaultPeriods.length > 0)
-                    // }
-                />
-            </Flex>
-        </Flex>
+        <Select
+            options={availableFixedPeriods}
+            allowClear
+            onChange={(val) => {
+                onChange(val);
+            }}
+            showSearch
+            filterOption={(input, option) =>
+                String(option?.label ?? "")
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
+            }
+            style={{ flex: 1 }}
+            value={period}
+            placeholder="Select period"
+        />
     );
+
+    // return (
+    //     <Flex gap="8px">
+
+    //         <Flex>
+    //             <Button
+    //                 icon={<LeftOutlined />}
+    //                 onClick={() => {
+    //                     setYear((prev) => prev - 1);
+    //                     onChange(undefined);
+    //                 }}
+    //                 disabled={
+    //                     year <= minYear ||
+    //                     (periodType === "FYJUL" && defaultPeriods.length > 0)
+    //                 }
+    //             />
+    //             <Button
+    //                 icon={<RightOutlined />}
+    //                 onClick={() => {
+    //                     setYear((prev) => prev + 1);
+    //                     onChange(undefined);
+    //                 }}
+    //                 disabled={
+    //                     year > maxYear ||
+    //                     (periodType === "FYJUL" && defaultPeriods.length > 0)
+    //                 }
+    //             />
+    //         </Flex>
+    //     </Flex>
+    // );
 }

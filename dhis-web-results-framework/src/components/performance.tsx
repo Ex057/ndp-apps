@@ -26,18 +26,6 @@ export default function Performance({
         sorter,
     ) => {
         if (!Array.isArray(sorter)) {
-            const { field, order } = sorter;
-            // if (field && order) {
-            //     setProcessedData((prev) => {
-            //         return orderBy(
-            //             prev,
-            //             [String(field)],
-            //             [order === "ascend" ? "asc" : "desc"],
-            //         );
-            //     });
-            // } else {
-            //     setProcessedData(() => data);
-            // }
         }
     };
     const columns: TableProps<AnalyticsData>["columns"] = React.useMemo(() => {
