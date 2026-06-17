@@ -22,8 +22,29 @@ export function OrgUnitSelect({
     const [searchValue, setSearchValue] = useState<string>("");
 
     const { engine } = RootRoute.useRouteContext();
+    const { ou: defaultOrgUnit } = RootRoute.useLoaderData();
     const queryClient = useQueryClient();
     const organisationUnits = useLiveQuery(() => db.dataViewOrgUnits.toArray());
+
+    React.useEffect(() => {
+        if (!defaultOrgUnit) return;
+        void queryClient.ensureQueryData(
+            orgUnitQueryOptions(defaultOrgUnit, engine),
+        );
+    }, [defaultOrgUnit, engine, queryClient]);
+
+    React.useEffect(() => {
+        const rootOrgUnits =
+            organisationUnits?.filter((orgUnit) => !orgUnit.pId) ?? [];
+        if (rootOrgUnits.length === 0) return;
+
+        void Promise.all(
+            rootOrgUnits.map(({ id }) =>
+                queryClient.ensureQueryData(orgUnitQueryOptions(id, engine)),
+            ),
+        );
+    }, [engine, organisationUnits, queryClient]);
+
     const onLoadData: TreeSelectProps["loadData"] = async ({ value }) => {
         if (value) {
             await queryClient.ensureQueryData(
@@ -77,6 +98,22 @@ export function OrgUnitSelect({
         setSearchValue(value);
     };
 
+    const expandedKeys = useMemo(
+        () =>
+            Array.from(
+                new Set(
+                    (organisationUnits ?? [])
+                        .filter((orgUnit) =>
+                            (organisationUnits ?? []).some(
+                                (child) => child.pId === orgUnit.id,
+                            ),
+                        )
+                        .map((orgUnit) => orgUnit.id),
+                ),
+            ),
+        [organisationUnits],
+    );
+
     return (
         <Form.Item
             label="Vote"
@@ -97,6 +134,7 @@ export function OrgUnitSelect({
                 onChange={onChange}
                 loadData={onLoadData}
                 treeData={orderBy(filteredTreeData, "title", "asc")}
+                treeExpandedKeys={expandedKeys}
                 multiple={isMulti}
                 filterTreeNode={false}
                 onSearch={handleSearch}

@@ -1,0 +1,8 @@
+{
+    "ERROR": "ERROR",
+    "Loading...": "Loading...",
+    "Hello {{name}}": "Hello {{name}}",
+    "Welcome to DHIS2 with TypeScript!": "Welcome to DHIS2 with TypeScript!",
+    "__MANIFEST_APP_TITLE_Application title": "target-baseline-data-entry",
+    "__MANIFEST_APP_DESCRIPTION_Application description": ""
+}

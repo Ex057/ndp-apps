@@ -3,6 +3,65 @@
 	font-size: 16px !important;
 }
 
+.policy-actions-table .ant-table {
+	border-radius: 0;
+	width: 100%;
+}
+
+.policy-actions-table .ant-table-container,
+.policy-actions-table .ant-table-content,
+.policy-actions-table table {
+	border-radius: 0 !important;
+}
+
+.policy-actions-table .ant-table-thead > tr > th {
+	background: #bbd1ee !important;
+	color: #25364a;
+	font-size: 15px !important;
+	font-weight: 700;
+	line-height: 1.25;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: middle;
+}
+
+.policy-actions-table .ant-table-tbody > tr > td {
+	color: #333333;
+	font-size: 13px !important;
+	font-weight: 400;
+	line-height: 1.4;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: top;
+}
+
+.policy-actions-table .ant-table-tbody > tr > td > div {
+	margin: -6px -8px;
+	padding: 6px 8px;
+}
+
+.policy-actions-table .ant-table-tbody > tr > td > div:not([style*="background-color"]) {
+	font-weight: 400;
+}
+
+.policy-actions-table .ant-table-tbody > tr > td:empty::after {
+	content: "";
+	display: block;
+	min-height: 24px;
+}
+
+.policy-actions-table .ant-table-cell {
+	border-color: #cad5e5 !important;
+}
+
+.policy-actions-table .ant-table-tbody > tr:hover > td {
+	background: #f7fbff !important;
+}
+
 /* File Icon Tabs Styling */
 /* .file-icon-tabs .ant-tabs-nav {
 	margin-bottom: 16px;

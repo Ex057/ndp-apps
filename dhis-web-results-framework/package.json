@@ -6,7 +6,9 @@
     "private": true,
     "scripts": {
         "build": "d2-app-scripts build",
-        "start": "d2-app-scripts start --proxy https://ndpme.go.ug/ndpdb",
+        "start": "yarn start:train",
+        "start:prod": "d2-app-scripts start --port 3000 --proxy https://ndpme.go.ug/ndpdb --proxyPort 8080",
+        "start:train": "d2-app-scripts start --port 3000 --proxy https://train.ndpme.go.ug/ndpdb --proxyPort 8080",
         "test": "d2-app-scripts test",
         "deploy": "d2-app-scripts deploy"
     },

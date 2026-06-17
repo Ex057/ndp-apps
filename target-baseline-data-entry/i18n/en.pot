@@ -1,0 +1,29 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: i18next-conv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"POT-Creation-Date: 2026-06-12T07:24:55.301Z\n"
+"PO-Revision-Date: 2026-06-12T07:24:55.303Z\n"
+
+msgid "ERROR"
+msgstr "ERROR"
+
+msgid "Loading..."
+msgstr "Loading..."
+
+msgid "Hello {{name}}"
+msgstr "Hello {{name}}"
+
+msgid "Welcome to DHIS2 with TypeScript!"
+msgstr "Welcome to DHIS2 with TypeScript!"
+
+msgctxt "Application title"
+msgid "__MANIFEST_APP_TITLE"
+msgstr "target-baseline-data-entry"
+
+msgctxt "Application description"
+msgid "__MANIFEST_APP_DESCRIPTION"
+msgstr ""

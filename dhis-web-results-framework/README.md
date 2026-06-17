@@ -6,11 +6,30 @@ In the project directory, you can run:
 
 ### `yarn start`
 
-Runs the app in the development mode.<br />
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Runs the app in development mode against the training DHIS2 instance.<br />
+Open [http://localhost:3000](http://localhost:3000) to view and test local UI changes in the browser.
+
+The development server uses two local ports:
+
+- `http://localhost:3000` serves the app shell and local source changes.
+- `http://localhost:8080` is the local DHIS2 proxy used by the app adapter for API calls.
+
+By default, the proxy points to `https://train.ndpme.go.ug/ndpdb`. Production is only used when running `yarn start:prod`.
+
+For direct Policy Actions testing, use:
+
+`http://localhost:3000/api/apps/NDP-Results-Framework-V2/index.html#/ndp/policy-actions`
 
 The page will reload if you make edits.<br />
 You will also see any lint errors in the console.
+
+### `yarn start:train`
+
+Runs the same local development setup as `yarn start`, explicitly binding the app to port `3000` and the training proxy to port `8080`.
+
+### `yarn start:prod`
+
+Runs the local development setup against the production DHIS2 instance. Use this only when intentionally testing against production.
 
 ### `yarn test`
 

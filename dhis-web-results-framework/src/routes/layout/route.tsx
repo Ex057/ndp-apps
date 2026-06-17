@@ -20,7 +20,7 @@ import {
 } from "antd";
 
 import { SettingOutlined } from "@ant-design/icons";
-import { isEmpty } from "lodash";
+import { isEmpty, maxBy } from "lodash";
 import { useWindowSize } from "../../hooks/use-window-size";
 import { initialQueryOptions } from "../../query-options";
 import { NDPValidator } from "../../types";
@@ -40,7 +40,28 @@ function Component() {
     const navigate = LayoutRoute.useNavigate();
     const { v } = LayoutRoute.useSearch();
 
-    const { configurations } = RootRoute.useLoaderData();
+    const { configurations, ndpVersions: rootNdpVersions } =
+        RootRoute.useLoaderData();
+    const latestNDP = maxBy(rootNdpVersions, (version) => {
+        return new Date(version.created).getTime();
+    });
+
+    if (!v) {
+        if (!latestNDP?.code) {
+            return <Navigate to="/settings" />;
+        }
+        return (
+            <Navigate
+                to={location.pathname}
+                search={(prev) => ({
+                    ...prev,
+                    v: latestNDP.code,
+                })}
+                replace
+            />
+        );
+    }
+
     if (
         isEmpty(configurations[v]) ||
         isEmpty(configurations[v].data) ||

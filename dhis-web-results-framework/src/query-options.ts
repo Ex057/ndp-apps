@@ -22,6 +22,9 @@ import {
     Option,
     OptionSet,
     OrgUnit,
+    TrackerLineListColumnMetadata,
+    TrackerLineListRow,
+    TrackerProgrammeOption,
 } from "./types";
 import {
     calculatePerformanceRatio,
@@ -485,7 +488,9 @@ export const initialQueryOptions = (
             });
 
             const {
-                orgUnits: { dataViewOrganisationUnits },
+                orgUnits: {
+                    organisationUnits: assignedOrganisationUnits,
+                },
                 options,
                 categories: { categories },
                 central,
@@ -510,7 +515,7 @@ export const initialQueryOptions = (
                     >;
                 };
             };
-            const organisationUnits: OrgUnit[] = dataViewOrganisationUnits.map(
+            const organisationUnits: OrgUnit[] = assignedOrganisationUnits.map(
                 ({ id, name, leaf }) => {
                     const current: OrgUnit = {
                         id,
@@ -562,11 +567,12 @@ export const initialQueryOptions = (
                     } catch (error) {}
                 }
             }
+            await db.dataViewOrgUnits.clear();
             await db.dataViewOrgUnits.bulkPut(organisationUnits);
             return {
                 programs,
                 ndpVersions,
-                ou: dataViewOrganisationUnits[0].id,
+                ou: assignedOrganisationUnits[0]?.id,
                 configurations,
                 programGoals,
                 programObjectives,
@@ -588,7 +594,7 @@ export const initialQueryOptions = (
                 ),
                 votes: central.organisationUnits.filter((ou) => {
                     if (allAreLeaves) {
-                        return dataViewOrganisationUnits.some(
+                        return assignedOrganisationUnits.some(
                             (dvou) => dvou.id === ou.id,
                         );
                     }
@@ -729,6 +735,723 @@ export const orgUnitQueryOptions = (
         },
     });
 };
+
+export const trackerProgramsQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    mode: "policy-actions" | "project-performances" = "policy-actions",
+) => {
+    return queryOptions({
+        queryKey: ["tracker-programs", mode],
+        queryFn: async () => {
+            const response = await engine.query({
+                programs: {
+                    resource: "programs",
+                    params: {
+                        filter: "programType:eq:WITH_REGISTRATION",
+                        fields: [
+                            "id",
+                            "name",
+                            "displayName",
+                            "code",
+                            "programDomain",
+                            "programTrackedEntityAttributes[displayInList]",
+                            "programStages[programStageDataElements[displayInReports]]",
+                        ].join(","),
+                        pageSize: 1000,
+                    },
+                },
+            });
+            const { programs } = response as unknown as {
+                programs: {
+                    programs: Array<{
+                        id: string;
+                        name: string;
+                        displayName?: string;
+                        code?: string;
+                        programDomain?: string;
+                        programTrackedEntityAttributes?: Array<{
+                            displayInList?: boolean;
+                        }>;
+                        programStages?: Array<{
+                            programStageDataElements?: Array<{
+                                displayInReports?: boolean;
+                            }>;
+                        }>;
+                    }>;
+                };
+            };
+            const scopedPrograms =
+                mode === "project-performances"
+                    ? programs.programs.filter(isLikelyProjectTrackerProgram)
+                    : programs.programs.filter(isLikelyPolicyActionProgram);
+            const visiblePrograms =
+                scopedPrograms.length > 0 ? scopedPrograms : programs.programs;
+
+            return orderBy(
+                visiblePrograms.map<TrackerProgrammeOption>(
+                    ({ id, name, displayName }) => ({
+                        id,
+                        name: displayName ?? name,
+                    }),
+                ),
+                "name",
+            );
+        },
+    });
+};
+
+export const trackerProgramMetadataQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    programId?: string,
+) => {
+    return queryOptions({
+        queryKey: ["tracker-program-metadata", programId],
+        enabled: Boolean(programId),
+        queryFn: async () => {
+            if (!programId) return [];
+            const response = await engine.query({
+                program: {
+                    resource: `programs/${programId}`,
+                    params: {
+                        fields: [
+                            "programTrackedEntityAttributes[displayInList,searchable,sortOrder,trackedEntityAttribute[id,name,displayName,optionSet[id,options[code,name,displayName]]]]",
+                            "programStages[id,name,displayName,sortOrder,programStageDataElements[displayInReports,sortOrder,dataElement[id,name,displayName,optionSet[id,options[code,name,displayName]]]]]",
+                        ].join(","),
+                    },
+                },
+            });
+
+            const { program } = response as unknown as {
+                program: {
+                    programTrackedEntityAttributes?: Array<{
+                        displayInList?: boolean;
+                        searchable?: boolean;
+                        sortOrder?: number;
+                        trackedEntityAttribute?: TrackerMetadataItem;
+                    }>;
+                    programStages?: Array<{
+                        id?: string;
+                        name?: string;
+                        displayName?: string;
+                        sortOrder?: number;
+                        programStageDataElements?: Array<{
+                            displayInReports?: boolean;
+                            sortOrder?: number;
+                            dataElement?: TrackerMetadataItem;
+                        }>;
+                    }>;
+                };
+            };
+
+            const attributes =
+                orderBy(
+                    program.programTrackedEntityAttributes?.filter(
+                        ({ displayInList }) => displayInList,
+                    ) ?? [],
+                    "sortOrder",
+                ).flatMap(({ trackedEntityAttribute, searchable }) =>
+                    trackedEntityAttribute
+                        ? [
+                              toTrackerColumnMetadata(
+                                  trackedEntityAttribute,
+                                  "attribute",
+                                  { searchable },
+                              ),
+                          ]
+                        : [],
+                );
+
+            const dataElements =
+                orderBy(program.programStages ?? [], "sortOrder").flatMap(
+                    (stage) =>
+                        orderBy(
+                            stage.programStageDataElements?.filter(
+                                (de) => de.displayInReports === true,
+                            ) ?? [],
+                            "sortOrder",
+                        ).flatMap((de) =>
+                            de.dataElement
+                                ? [
+                                      toTrackerColumnMetadata(
+                                          de.dataElement,
+                                          "dataElement",
+                                          {
+                                              stageId: stage.id,
+                                              stageLabel:
+                                                  stage.displayName ??
+                                                  stage.name,
+                                          },
+                                      ),
+                                  ]
+                                : [],
+                        ),
+                );
+
+            return uniqBy([...attributes, ...dataElements], "id");
+        },
+    });
+};
+
+export const trackerLineListQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    {
+        programId,
+        rootOrgUnitId,
+        orgUnitId,
+        enabled = true,
+    }: {
+        programId?: string;
+        rootOrgUnitId?: string;
+        orgUnitId?: string;
+        enabled?: boolean;
+    },
+) => {
+    return queryOptions({
+        queryKey: ["tracker-line-list", programId, rootOrgUnitId, orgUnitId],
+        enabled: Boolean(programId && rootOrgUnitId && orgUnitId && enabled),
+        queryFn: async () => {
+            if (!programId || !rootOrgUnitId || !orgUnitId) return [];
+
+            const directTrackedEntityInstances =
+                await fetchTrackedEntitiesSafely(engine, {
+                    programId,
+                    orgUnitId,
+                    pageSize: 50,
+                });
+
+            const shouldFallbackToRootScope =
+                orgUnitId !== rootOrgUnitId &&
+                directTrackedEntityInstances.length === 0;
+
+            const trackedEntityInstances = shouldFallbackToRootScope
+                ? await fetchTrackedEntitiesSafely(engine, {
+                      programId,
+                      orgUnitId: rootOrgUnitId,
+                      pageSize: 50,
+                  })
+                : directTrackedEntityInstances;
+
+            const orgUnitDetailsById =
+                trackedEntityInstances.length > 0
+                    ? await fetchOrgUnitDetailsByIdSafely(
+                          engine,
+                          Array.from(
+                              new Set(
+                                  trackedEntityInstances.flatMap(({ orgUnit }) =>
+                                      orgUnit ? [orgUnit] : [],
+                                  ),
+                              ),
+                          ),
+                      )
+                    : new Map<string, { name: string; path?: string }>();
+
+            const processedRows = trackedEntityInstances.map<TrackerLineListRow>(
+                (trackedEntity) => {
+                    const trackedEntityId =
+                        trackedEntity.trackedEntityInstance;
+                    const orgUnitDetails = trackedEntity.orgUnit
+                        ? orgUnitDetailsById.get(trackedEntity.orgUnit)
+                        : undefined;
+                    const row: TrackerLineListRow = {
+                        key: trackedEntityId,
+                        trackedEntity: trackedEntityId,
+                        orgUnit: trackedEntity.orgUnit,
+                        orgUnitName:
+                            trackedEntity.orgUnitName ??
+                            orgUnitDetails?.name ??
+                            trackedEntity.orgUnit,
+                    };
+
+                    trackedEntity.attributes?.forEach(({ attribute, value }) => {
+                        row[attribute] = value;
+                    });
+
+                    const latestValues = new Map<
+                        string,
+                        { value: string; occurredAt: string }
+                    >();
+
+                    trackedEntity.enrollments?.forEach(({ events }) => {
+                        events?.forEach((event) => {
+                            const occurredAt =
+                                event.eventDate ?? event.occurredAt ?? "";
+                            event.dataValues?.forEach(
+                                ({ dataElement, value }) => {
+                                    const previous =
+                                        latestValues.get(dataElement);
+                                    if (
+                                        !previous ||
+                                        occurredAt >= previous.occurredAt
+                                    ) {
+                                        latestValues.set(dataElement, {
+                                            value,
+                                            occurredAt,
+                                        });
+                                    }
+                                },
+                            );
+                        });
+                    });
+
+                    latestValues.forEach(({ value }, dataElement) => {
+                        row[dataElement] = value;
+                    });
+
+                    return row;
+                },
+            );
+
+            const filteredRows =
+                shouldFallbackToRootScope && orgUnitId !== rootOrgUnitId
+                    ? processedRows.filter((row) => {
+                          const path = row.orgUnit
+                              ? orgUnitDetailsById.get(row.orgUnit)?.path
+                              : undefined;
+                          return Boolean(
+                              path &&
+                                  (path === `/${orgUnitId}` ||
+                                      path.startsWith(`/${orgUnitId}/`) ||
+                                      path.includes(`/${orgUnitId}/`)),
+                          );
+                      })
+                    : processedRows;
+
+            return orderBy(
+                filteredRows,
+                [
+                    (row) =>
+                        String(row.orgUnitName ?? row.orgUnit ?? "").toLowerCase(),
+                ],
+                ["asc"],
+            );
+        },
+    });
+};
+
+export const orgUnitHierarchyQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    rootId?: string,
+) => {
+    return queryOptions({
+        queryKey: ["org-unit-hierarchy", rootId],
+        enabled: Boolean(rootId),
+        queryFn: async () => {
+            if (!rootId) return [];
+            const response = await engine.query({
+                root: {
+                    resource: `organisationUnits/${rootId}`,
+                    params: {
+                        fields: "id,name,displayName,leaf,parent[id],path,ancestors[id,name,displayName,leaf,parent[id],path],children[id,name,displayName,leaf,parent[id],path]",
+                    },
+                },
+            });
+            const { root } = response as unknown as {
+                root: {
+                    id: string;
+                    name: string;
+                    displayName?: string;
+                    leaf: boolean;
+                    parent?: { id: string };
+                    path: string;
+                    ancestors?: Array<{
+                        id: string;
+                        name: string;
+                        displayName?: string;
+                        leaf: boolean;
+                        parent?: { id: string };
+                        path: string;
+                    }>;
+                    children?: Array<{
+                        id: string;
+                        name: string;
+                        displayName?: string;
+                        leaf: boolean;
+                        parent?: { id: string };
+                        path: string;
+                    }>;
+                };
+            };
+            const units = orderBy(
+                uniqBy(
+                    [
+                        ...(root.ancestors ?? []),
+                        root,
+                        ...(root.children ?? []),
+                    ],
+                    "id",
+                ),
+                "path",
+            );
+            const rootPathIds = new Set(root.path.split("/").filter(Boolean));
+            const nodes = new Map<string, OrgUnit>();
+
+            units.forEach(({ id, name, displayName, leaf, parent }) => {
+                nodes.set(id, {
+                    id,
+                    key: id,
+                    value: id,
+                    title: displayName ?? name,
+                    isLeaf: leaf,
+                    pId: parent?.id,
+                    disabled: id !== rootId && rootPathIds.has(id),
+                });
+            });
+
+            const tree: OrgUnit[] = [];
+            nodes.forEach((node) => {
+                if (node.pId && nodes.has(node.pId)) {
+                    const parent = nodes.get(node.pId)!;
+                    parent.children = [...(parent.children ?? []), node];
+                } else {
+                    tree.push(node);
+                }
+            });
+
+            return sortOrgUnitTree(tree);
+        },
+    });
+};
+
+export const orgUnitChildrenQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    orgUnitId?: string,
+) => {
+    return queryOptions({
+        queryKey: ["org-unit-children", orgUnitId],
+        enabled: Boolean(orgUnitId),
+        queryFn: async () => {
+            if (!orgUnitId) return [];
+            return fetchOrgUnitChildren(engine, orgUnitId);
+        },
+    });
+};
+
+type TrackerMetadataItem = {
+    id: string;
+    name: string;
+    displayName?: string;
+    optionSet?: {
+        id: string;
+        options?: Array<{
+            code: string;
+            name: string;
+            displayName?: string;
+        }>;
+    };
+};
+
+const toTrackerColumnMetadata = (
+    item: TrackerMetadataItem,
+    source: TrackerLineListColumnMetadata["source"],
+    extras?: Partial<
+        Pick<
+            TrackerLineListColumnMetadata,
+            "searchable" | "stageId" | "stageLabel"
+        >
+    >,
+): TrackerLineListColumnMetadata => ({
+    id: item.id,
+    label: item.displayName ?? item.name,
+    source,
+    searchable: extras?.searchable,
+    stageId: extras?.stageId,
+    stageLabel: extras?.stageLabel,
+    optionSet: item.optionSet
+        ? {
+              id: item.optionSet.id,
+              options:
+                  item.optionSet.options?.map(({ code, name, displayName }) => ({
+                      code,
+                      name: displayName ?? name,
+                  })) ?? [],
+          }
+        : undefined,
+});
+
+type DeprecatedTrackerTrackedEntity = {
+    trackedEntityInstance: string;
+    orgUnit?: string;
+    orgUnitName?: string;
+    attributes?: Array<{
+        attribute: string;
+        value: string;
+    }>;
+    enrollments?: Array<{
+        events?: Array<{
+            occurredAt?: string;
+            eventDate?: string;
+            dataValues?: Array<{
+                dataElement: string;
+                value: string;
+            }>;
+        }>;
+    }>;
+};
+
+async function fetchAllTrackedEntityPages(
+    engine: ReturnType<typeof useDataEngine>,
+    {
+        programId,
+        orgUnitId,
+        pageSize,
+    }: {
+        programId: string;
+        orgUnitId: string;
+        pageSize: number;
+    },
+) {
+    const allRows: DeprecatedTrackerTrackedEntity[] = [];
+    let page = 1;
+    let pageCount = 1;
+
+    do {
+        const response = await engine.query({
+            trackedEntities: {
+                resource: "trackedEntityInstances.json",
+                params: {
+                    program: programId,
+                    ou: orgUnitId,
+                    ouMode: "DESCENDANTS",
+                    page,
+                    pageSize,
+                    fields: [
+                        "trackedEntityInstance",
+                        "orgUnit",
+                        "orgUnitName",
+                        "attributes[attribute,value]",
+                        "enrollments[enrollment,program,status,enrollmentDate,eventDate,events[event,programStage,status,eventDate,dataValues[dataElement,value]]]",
+                    ].join(","),
+                },
+            },
+        });
+        const { trackedEntities } = response as unknown as {
+            trackedEntities: {
+                pager?: {
+                    page?: number;
+                    pageCount?: number;
+                };
+                trackedEntityInstances?: DeprecatedTrackerTrackedEntity[];
+            };
+        };
+
+        allRows.push(...(trackedEntities.trackedEntityInstances ?? []));
+        pageCount = trackedEntities.pager?.pageCount ?? pageCount;
+        page += 1;
+    } while (page <= pageCount);
+
+    return allRows;
+}
+
+async function fetchTrackedEntitiesSafely(
+    engine: ReturnType<typeof useDataEngine>,
+    params: {
+        programId: string;
+        orgUnitId: string;
+        pageSize: number;
+    },
+) {
+    try {
+        return await fetchAllTrackedEntityPages(engine, params);
+    } catch (error) {
+        if (isOrgUnitAccessError(error)) {
+            return [];
+        }
+        throw error;
+    }
+}
+
+function isLikelyPolicyActionProgram(program: {
+    name: string;
+    displayName?: string;
+    code?: string;
+    programDomain?: string;
+    programTrackedEntityAttributes?: Array<{ displayInList?: boolean }>;
+    programStages?: Array<{
+        programStageDataElements?: Array<{ displayInReports?: boolean }>;
+    }>;
+}) {
+    const searchableText = [
+        program.name,
+        program.displayName,
+        program.code,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+    const normalizedDomain = program.programDomain?.toLowerCase();
+    const hasReportProfile =
+        program.programTrackedEntityAttributes?.some(
+            ({ displayInList }) => displayInList,
+        ) ||
+        program.programStages?.some(({ programStageDataElements }) =>
+            programStageDataElements?.some(
+                ({ displayInReports }) => displayInReports,
+            ),
+        );
+
+    return (
+        hasReportProfile &&
+        (normalizedDomain === "policyaction" ||
+            normalizedDomain === "policy_action" ||
+            searchableText.includes("policy action") ||
+            searchableText.includes("policy directive") ||
+            searchableText.includes("directive tracker"))
+    );
+}
+
+function isLikelyProjectTrackerProgram(program: {
+    name: string;
+    displayName?: string;
+    code?: string;
+    programDomain?: string;
+    programTrackedEntityAttributes?: Array<{ displayInList?: boolean }>;
+    programStages?: Array<{
+        programStageDataElements?: Array<{ displayInReports?: boolean }>;
+    }>;
+}) {
+    const searchableText = [
+        program.name,
+        program.displayName,
+        program.code,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+    const normalizedDomain = program.programDomain?.toLowerCase();
+    const hasReportProfile =
+        program.programTrackedEntityAttributes?.some(
+            ({ displayInList }) => displayInList,
+        ) ||
+        program.programStages?.some(({ programStageDataElements }) =>
+            programStageDataElements?.some(
+                ({ displayInReports }) => displayInReports,
+            ),
+        );
+
+    return (
+        hasReportProfile &&
+        (normalizedDomain === "project" ||
+            normalizedDomain === "projecttracker" ||
+            normalizedDomain === "project_tracker" ||
+            searchableText.includes("project tracker") ||
+            searchableText.includes("project performance"))
+    );
+}
+
+async function fetchOrgUnitDetailsById(
+    engine: ReturnType<typeof useDataEngine>,
+    orgUnitIds: string[],
+) {
+    if (orgUnitIds.length === 0) {
+        return new Map<string, { name: string; path?: string }>();
+    }
+
+    const response = await engine.query({
+        orgUnits: {
+            resource: "organisationUnits",
+            params: {
+                filter: `id:in:[${orgUnitIds.join(",")}]`,
+                fields: "id,name,displayName,path",
+                pageSize: orgUnitIds.length,
+            },
+        },
+    });
+    const { orgUnits } = response as unknown as {
+        orgUnits: {
+            organisationUnits: Array<{
+                id: string;
+                name: string;
+                displayName?: string;
+                path?: string;
+            }>;
+        };
+    };
+
+    return new Map(
+        orgUnits.organisationUnits.map(({ id, name, displayName, path }) => [
+            id,
+            {
+                name: displayName ?? name,
+                path,
+            },
+        ]),
+    );
+}
+
+async function fetchOrgUnitDetailsByIdSafely(
+    engine: ReturnType<typeof useDataEngine>,
+    orgUnitIds: string[],
+) {
+    try {
+        return await fetchOrgUnitDetailsById(engine, orgUnitIds);
+    } catch (error) {
+        if (isOrgUnitAccessError(error)) {
+            return new Map<string, { name: string; path?: string }>();
+        }
+        throw error;
+    }
+}
+
+async function fetchOrgUnitChildren(
+    engine: ReturnType<typeof useDataEngine>,
+    orgUnitId: string,
+): Promise<OrgUnit[]> {
+    const response = await engine.query({
+        orgUnit: {
+            resource: `organisationUnits/${orgUnitId}`,
+            params: {
+                fields: "children[id,name,displayName,leaf,parent[id],path]",
+            },
+        },
+    });
+    const { orgUnit } = response as unknown as {
+        orgUnit: {
+            children?: Array<{
+                id: string;
+                name: string;
+                displayName?: string;
+                leaf: boolean;
+                parent?: { id: string };
+                path: string;
+            }>;
+        };
+    };
+
+    return orderBy(
+        (orgUnit.children ?? []).map(({ id, name, displayName, leaf, parent }) => ({
+            id,
+            key: id,
+            value: id,
+            title: displayName ?? name,
+            isLeaf: leaf,
+            pId: parent?.id,
+        })),
+        [(node) => String(node.title).toLowerCase()],
+    );
+}
+
+function sortOrgUnitTree(nodes: OrgUnit[]): OrgUnit[] {
+    return orderBy(
+        nodes.map((node) => ({
+            ...node,
+            children: node.children
+                ? sortOrgUnitTree(node.children as OrgUnit[])
+                : undefined,
+        })),
+        [(node) => String(node.title).toLowerCase()],
+    );
+}
+
+function isOrgUnitAccessError(error: unknown) {
+    const errorText = JSON.stringify(error).toLowerCase();
+    return (
+        errorText.includes("organisation unit") &&
+        (errorText.includes("access") ||
+            errorText.includes("permission") ||
+            errorText.includes("denied") ||
+            errorText.includes("not found"))
+    );
+}
 
 export const analyticsQueryOptions = ({
     engine,

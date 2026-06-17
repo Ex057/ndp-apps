@@ -1,12 +1,9 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
 import React from "react";
 import Performance from "../../../../components/performance";
-import { dataElementsFromGroupQueryOptions } from "../../../../query-options";
 import { RootRoute } from "../../../__root";
 import { OutputPerformanceRoute } from "./route";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
-import { derivePeriods } from "../../../../utils";
 export const OutputPerformanceIndexRoute = createRoute({
     path: "/",
     getParentRoute: () => OutputPerformanceRoute,

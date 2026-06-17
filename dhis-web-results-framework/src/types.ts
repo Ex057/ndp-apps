@@ -5,9 +5,19 @@ import { ToOptions } from "@tanstack/react-router";
 import { z } from "zod";
 import { router } from "./router";
 import { processDataElements } from "./utils";
-export const NDPValidator = z.object({
-    v: z.string(),
-});
+
+const firstStringFromQuery = z.preprocess((value) => {
+    if (Array.isArray(value)) {
+        return value.find((item) => typeof item === "string");
+    }
+    return value;
+}, z.string().optional());
+
+export const NDPValidator = z
+    .object({
+        v: firstStringFromQuery,
+    })
+    .passthrough();
 
 export const SettingsSearch = z.object({
     edit: z.string().optional(),
@@ -30,13 +40,13 @@ export const GoalValidator = z.object({
 });
 
 export const PerformanceSchema = z.object({
-    pe: z.string().optional(),
+    pe: firstStringFromQuery,
     quarters: z.boolean().optional(),
     category: z.string(),
     categoryOptions: z.string().array().optional(),
 });
 export const VoteSchema = z.object({
-    pe: z.string().optional(),
+    pe: firstStringFromQuery,
     quarters: z.boolean().optional(),
     ou: z.string(),
     category: z.string(),
@@ -45,14 +55,28 @@ export const VoteSchema = z.object({
 });
 
 export const FlashReportSchema = z.object({
-    pe: z.string().optional(),
+    pe: firstStringFromQuery,
     ou: z.string(),
 });
 
 export const ProgramReportSchema = z.object({
-    pe: z.string().optional(),
+    pe: firstStringFromQuery,
     program: z.string(),
 });
+
+export const PolicyActionSearchSchema = z
+    .object({
+        v: firstStringFromQuery,
+        ou: firstStringFromQuery,
+        pe: firstStringFromQuery,
+        category: firstStringFromQuery,
+        categoryOptions: z
+            .union([z.string(), z.array(z.string())])
+            .optional(),
+        deg: firstStringFromQuery,
+        isSum: z.union([z.boolean(), z.string()]).optional(),
+    })
+    .passthrough();
 
 export const DataElementGroupSetResponseSchema = z.object({
     pager: z.object({
@@ -269,6 +293,32 @@ export type OptionSet = {
     id: string;
     name: string;
     options: Option[];
+};
+
+export type TrackerProgrammeOption = {
+    id: string;
+    name: string;
+};
+
+export type TrackerLineListColumnMetadata = {
+    id: string;
+    label: string;
+    source: "orgUnit" | "attribute" | "dataElement";
+    searchable?: boolean;
+    stageId?: string;
+    stageLabel?: string;
+    optionSet?: {
+        id: string;
+        options: Array<{
+            code: string;
+            name: string;
+        }>;
+    };
+};
+
+export type TrackerLineListRow = Record<string, string | undefined> & {
+    key: string;
+    trackedEntity: string;
 };
 
 export type PeriodType = (typeof periodTypes)[number];
