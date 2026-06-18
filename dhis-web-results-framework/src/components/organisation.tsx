@@ -13,11 +13,15 @@ export function OrgUnitSelect({
     onChange,
     value,
     isMulti,
+    showFormItem = true,
+    label = "Vote",
 }: {
     value: string | string[] | undefined;
     onChange: (newValue: string | string[] | undefined) => void;
     isMulti?: boolean;
     disabled?: boolean;
+    showFormItem?: boolean;
+    label?: string;
 }) {
     const [searchValue, setSearchValue] = useState<string>("");
 
@@ -114,31 +118,39 @@ export function OrgUnitSelect({
         [organisationUnits],
     );
 
+    const select = (
+        <TreeSelect
+            disabled={disabled}
+            treeDataSimpleMode
+            showSearch
+            allowClear
+            style={{ width: "100%", flex: 1 }}
+            value={value}
+            placeholder="Please select"
+            onChange={onChange}
+            loadData={onLoadData}
+            treeData={orderBy(filteredTreeData, "title", "asc")}
+            treeExpandedKeys={expandedKeys}
+            multiple={isMulti}
+            filterTreeNode={false}
+            onSearch={handleSearch}
+        />
+    );
+
+    if (!showFormItem) {
+        return select;
+    }
+
     return (
         <Form.Item
-            label="Vote"
+            label={label}
             layout="horizontal"
             labelCol={{ span: 4 }}
             wrapperCol={{ span: 20 }}
             labelAlign="left"
             style={{ width: "100%" }}
         >
-            <TreeSelect
-                disabled={disabled}
-                treeDataSimpleMode
-                showSearch
-                allowClear
-                style={{ width: "100%", flex: 1 }}
-                value={value}
-                placeholder="Please select"
-                onChange={onChange}
-                loadData={onLoadData}
-                treeData={orderBy(filteredTreeData, "title", "asc")}
-                treeExpandedKeys={expandedKeys}
-                multiple={isMulti}
-                filterTreeNode={false}
-                onSearch={handleSearch}
-            />
+            {select}
         </Form.Item>
     );
 }

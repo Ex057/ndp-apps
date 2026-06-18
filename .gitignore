@@ -4,5 +4,7 @@ node_modules/
 src/locales
 build
 
+dhis-web-results-framework/guide.md
+
 # Distribution folders
 **/dist/

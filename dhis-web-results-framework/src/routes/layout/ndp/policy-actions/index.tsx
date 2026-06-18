@@ -1,16 +1,14 @@
 import { createRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Dayjs } from "dayjs";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
     Button,
     Card,
     Col,
     DatePicker,
-    Dropdown,
     Empty,
     InputNumber,
-    Modal,
     Row,
     Select,
     Space,
@@ -18,22 +16,24 @@ import {
     Typography,
     Collapse,
 } from "antd";
-import type { MenuProps, TableProps } from "antd";
+import type { TableProps } from "antd";
 import {
     CloseCircleOutlined,
     DownloadOutlined,
-    FileExcelOutlined,
-    FileTextOutlined,
     MinusSquareOutlined,
     PlusSquareOutlined,
 } from "@ant-design/icons";
-import downloadExcelFromColumns from "../../../../download-antd-table";
 import { OrgUnitSelect } from "../../../../components/organisation";
+import { useWindowSize } from "../../../../hooks/use-window-size";
 import {
     trackerLineListQueryOptions,
     trackerProgramMetadataQueryOptions,
     trackerProgramsQueryOptions,
 } from "../../../../query-options";
+import {
+    exportTrackerTableToExcel,
+    exportTrackerTableToPdf,
+} from "../../../../utils/tracker-report-export";
 import {
     TrackerLineListColumnMetadata,
     TrackerLineListRow,
@@ -55,20 +55,29 @@ export const PolicyActionIndexRoute = createRoute({
 function Component() {
     const { engine } = PolicyActionIndexRoute.useRouteContext();
     const { ou: defaultOrgUnit } = RootRoute.useLoaderData();
+    const { width: viewportWidth, height: viewportHeight } = useWindowSize();
     const mdaRootOrgUnit = defaultOrgUnit;
     const [selectedProgramme, setSelectedProgramme] = useState<string>();
     const [selectedProgrammeTitle, setSelectedProgrammeTitle] = useState<string>();
     const [displayedProgramme, setDisplayedProgramme] = useState<string>();
     const [selectedMDA, setSelectedMDA] = useState<string>();
-    const [reportDisplayed, setReportDisplayed] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
     const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
     const [selectedPeriodRange, setSelectedPeriodRange] = useState<
         [Dayjs | null, Dayjs | null] | null
     >(null);
+    const [hasInitializedDefaultMda, setHasInitializedDefaultMda] =
+        useState(false);
+    const [tableScrollY, setTableScrollY] = useState(320);
+    const [reportPanelHeight, setReportPanelHeight] = useState<number>();
+    const reportPanelRef = useRef<HTMLDivElement>(null);
+    const reportHeaderRef = useRef<HTMLDivElement>(null);
+    const summaryRef = useRef<HTMLDivElement>(null);
+    const footerRef = useRef<HTMLDivElement>(null);
     const reportOrgUnitId = selectedMDA ?? mdaRootOrgUnit;
     const effectiveRootOrgUnitId = mdaRootOrgUnit ?? selectedMDA;
+    const isCompactScreen = viewportWidth < 768;
 
     const trackerProgramsQuery = useQuery(trackerProgramsQueryOptions(engine));
     const metadataQuery = useQuery(
@@ -79,7 +88,7 @@ function Component() {
             programId: displayedProgramme,
             rootOrgUnitId: effectiveRootOrgUnitId,
             orgUnitId: reportOrgUnitId,
-            enabled: reportDisplayed,
+            enabled: Boolean(displayedProgramme),
         }),
     );
     const summaryLineListQuery = useQuery(
@@ -87,7 +96,7 @@ function Component() {
             programId: displayedProgramme,
             rootOrgUnitId: effectiveRootOrgUnitId,
             orgUnitId: reportOrgUnitId,
-            enabled: reportDisplayed,
+            enabled: Boolean(displayedProgramme),
         }),
     );
 
@@ -127,8 +136,9 @@ function Component() {
                 title: "Vote",
                 dataIndex: "orgUnitName",
                 key: "orgUnitName",
-                fixed: "left" as const,
                 width: getColumnWidth("Vote"),
+                align: getColumnAlignment("Vote"),
+                ellipsis: true,
                 onHeaderCell: () => ({
                     style: getSharedCellStyle("Vote"),
                 }),
@@ -147,6 +157,8 @@ function Component() {
                 dataIndex: meta.id,
                 key: meta.id,
                 width: getColumnWidth(meta.label),
+                align: getColumnAlignment(meta.label),
+                ellipsis: shouldEllipsizeColumn(meta.label),
                 onHeaderCell: () => ({
                     style: getSharedCellStyle(meta.label),
                 }),
@@ -263,70 +275,14 @@ function Component() {
     }, [displayedProgramme, pageSize, reportOrgUnitId, selectedPeriodRange]);
 
     React.useEffect(() => {
+        setDisplayedProgramme(selectedProgramme);
+    }, [selectedProgramme]);
+
+    React.useEffect(() => {
         if (currentPage > totalPages) {
             setCurrentPage(totalPages);
         }
     }, [currentPage, totalPages]);
-
-    const handleExport = useCallback(
-        async (type: "excel" | "csv") => {
-            if (!dynamicColumns || !hasRows) return;
-            if (type === "excel") {
-                await downloadExcelFromColumns(
-                    dynamicColumns,
-                    rows,
-                    "policy-actions-line-list.xlsx",
-                );
-                return;
-            }
-            downloadCsv(
-                dynamicColumns,
-                rows,
-                "policy-actions-line-list.csv",
-            );
-        },
-        [dynamicColumns, hasRows, rows],
-    );
-
-    const exportMenuItems = useMemo<MenuProps>(
-        () => ({
-            items: [
-                {
-                    key: "excel",
-                    label: "Export to Excel (.xlsx)",
-                    icon: <FileExcelOutlined style={{ color: "#1f7347" }} />,
-                    disabled: !hasRows,
-                    onClick: () => handleExport("excel"),
-                },
-                {
-                    key: "csv",
-                    label: "Export to CSV (.csv)",
-                    icon: <FileTextOutlined />,
-                    disabled: !hasRows,
-                    onClick: () => handleExport("csv"),
-                },
-            ],
-        }),
-        [handleExport, hasRows],
-    );
-
-    const handleDisplayReport = () => {
-        if (!selectedProgramme) {
-            Modal.warning({
-                title: "Programme Required",
-                content:
-                    "Please choose a target programme before rendering the line list.",
-            });
-            return;
-        }
-        setDisplayedProgramme(selectedProgramme);
-        setReportDisplayed(true);
-    };
-
-    const handleMdaClear = () => {
-        setSelectedMDA(undefined);
-        setDisplayedProgramme(reportDisplayed ? selectedProgramme : undefined);
-    };
 
     const tableError = metadataQuery.error
         ? "Unable to load tracker programme metadata for the selected programme."
@@ -334,29 +290,146 @@ function Component() {
           ? "Unable to load tracker line-list data for the selected criteria."
           : undefined;
 
+    React.useEffect(() => {
+        if (hasInitializedDefaultMda) return;
+        if (defaultOrgUnit) {
+            setSelectedMDA(defaultOrgUnit);
+        }
+        setHasInitializedDefaultMda(true);
+    }, [defaultOrgUnit, hasInitializedDefaultMda]);
+
+    React.useEffect(() => {
+        if (!displayedProgramme) return;
+
+        const updateTableLayout = () => {
+            const panelTop =
+                reportPanelRef.current?.getBoundingClientRect().top ?? 0;
+            const availableHeight = Math.max(
+                isCompactScreen ? 500 : 560,
+                viewportHeight - panelTop - 20,
+            );
+            const headerHeight =
+                reportHeaderRef.current?.getBoundingClientRect().height ?? 0;
+            const summaryHeight =
+                summaryRef.current?.getBoundingClientRect().height ?? 0;
+            const footerHeight =
+                footerRef.current?.getBoundingClientRect().height ?? 0;
+            const errorHeight = tableError ? 32 : 0;
+            const reservedHeight =
+                headerHeight +
+                summaryHeight +
+                footerHeight +
+                errorHeight +
+                (isCompactScreen ? 84 : 96);
+            setReportPanelHeight(availableHeight);
+            setTableScrollY(
+                Math.max(
+                    isCompactScreen ? 220 : 280,
+                    availableHeight - reservedHeight,
+                ),
+            );
+        };
+
+        const observer = new ResizeObserver(updateTableLayout);
+        [
+            reportPanelRef.current,
+            reportHeaderRef.current,
+            summaryRef.current,
+            footerRef.current,
+        ]
+            .filter((element): element is Element => Boolean(element))
+            .forEach((element) => observer.observe(element));
+
+        updateTableLayout();
+        const animationFrame = window.requestAnimationFrame(updateTableLayout);
+        return () => {
+            window.cancelAnimationFrame(animationFrame);
+            observer.disconnect();
+        };
+    }, [
+        isCompactScreen,
+        displayedProgramme,
+        selectedPeriodRange,
+        tableError,
+        viewportHeight,
+        viewportWidth,
+        rows.length,
+    ]);
+
+    const exportSubtitle = useMemo(() => {
+        const parts = [`Programme: ${selectedProgrammeTitle ?? "Selected programme"}`];
+        parts.push(`Scope: ${reportScope}`);
+        if (selectedPeriodRange?.[0] || selectedPeriodRange?.[1]) {
+            parts.push(
+                `Period: ${formatPeriodRangeLabel(selectedPeriodRange)}`,
+            );
+        }
+        return parts.join(" | ");
+    }, [reportScope, selectedPeriodRange, selectedProgrammeTitle]);
+
+    const handlePdfExport = useCallback(() => {
+        if (!dynamicColumns || !hasRows) return;
+        exportTrackerTableToPdf({
+            columns: dynamicColumns,
+            rows,
+            title: "Policy Action Tracker",
+            subtitle: exportSubtitle,
+        });
+    }, [dynamicColumns, exportSubtitle, hasRows, rows]);
+
+    const handleExcelExport = useCallback(async () => {
+        if (!dynamicColumns || !hasRows) return;
+        await exportTrackerTableToExcel({
+            columns: dynamicColumns,
+            rows,
+            title: "Policy Action Tracker",
+            subtitle: exportSubtitle,
+            sheetName: "Policy Actions",
+        });
+    }, [dynamicColumns, exportSubtitle, hasRows, rows]);
+
+    const handleMdaClear = () => {
+        setSelectedMDA(undefined);
+    };
+
     return (
-        <Space
-            direction="vertical"
-            size="small"
-            style={{ width: "100%", padding: "8px" }}
-        >
-            <Row gutter={[16, 16]}>
-                <Col xs={24} md={14}>
+        <div className="policy-actions-page">
+            <Row
+                gutter={[16, 16]}
+                align="stretch"
+                className="policy-actions-controls-row"
+            >
+                <Col xs={24} md={14} className="policy-actions-control-col">
                     <Card
+                        className="policy-actions-control-card policy-actions-program-card"
                         size="small"
                         style={{
-                            backgroundColor: "#e2eedd",
-                            borderColor: "#c2dcba",
+                            backgroundColor: "#d0ebd0",
+                            borderColor: "#a4d2a3",
+                            width: "100%",
+                            height: "100%",
+                            borderRadius: "3px",
                         }}
-                        styles={{ body: { padding: "12px" } }}
+                        styles={{
+                            body: {
+                                padding: "12px",
+                                height: "100%",
+                                display: "flex",
+                                alignItems: "flex-start",
+                            },
+                        }}
                     >
-                        <Row align="middle" gutter={[12, 12]}>
-                            <Col xs={24} sm={4}>
+                        <Row
+                            align="middle"
+                            gutter={[12, 12]}
+                            style={{ width: "100%" }}
+                        >
+                            <Col xs={24} sm={5}>
                                 <Text strong style={{ fontSize: "14px" }}>
                                     Programme
                                 </Text>
                             </Col>
-                            <Col xs={24} sm={14}>
+                            <Col xs={24} sm={19}>
                                 <Select
                                     placeholder="Please select a tracker programme"
                                     style={{ width: "100%" }}
@@ -378,9 +451,6 @@ function Component() {
                                                 ? label
                                                 : undefined,
                                         );
-                                        setDisplayedProgramme(
-                                            reportDisplayed ? value : undefined,
-                                        );
                                     }}
                                     filterOption={(input, option) =>
                                         String(option?.label ?? "")
@@ -391,32 +461,22 @@ function Component() {
                                     allowClear
                                 />
                             </Col>
-                            <Col xs={24} sm={6}>
-                                <Button
-                                    type="primary"
-                                    style={{
-                                        backgroundColor: "#6ba2c9",
-                                        borderColor: "#6ba2c9",
-                                        width: "100%",
-                                    }}
-                                    onClick={handleDisplayReport}
-                                >
-                                    Display report
-                                </Button>
-                            </Col>
                         </Row>
                     </Card>
                 </Col>
 
-                <Col xs={24} md={10}>
+                <Col xs={24} md={10} className="policy-actions-control-col">
                     <Card
+                        className="policy-actions-control-card"
                         size="small"
                         style={{
-                            backgroundColor: "#cfdff2",
-                            borderColor: "#b0ccf0",
+                            backgroundColor: "#bbd1ee",
+                            borderColor: "#729fcf",
                             height: "100%",
+                            width: "100%",
+                            borderRadius: "3px",
                         }}
-                        styles={{ body: { padding: "12px" } }}
+                        styles={{ body: { padding: "12px", height: "100%" } }}
                     >
                         <Collapse
                             bordered={false}
@@ -451,47 +511,29 @@ function Component() {
                                     children: (
                                         <Space
                                             direction="vertical"
-                                            size={12}
+                                            size={16}
                                             style={{ width: "100%" }}
                                         >
-                                            <div>
+                                            <div className="policy-actions-filter-row">
                                                 <Text
                                                     strong
-                                                    style={{
-                                                        fontSize: "14px",
-                                                        display: "block",
-                                                        marginBottom: "4px",
-                                                    }}
+                                                    className="policy-actions-filter-label"
                                                 >
-                                                    Filter by MDA
+                                                    Vote:
                                                 </Text>
-                                                <div
-                                                    style={{
-                                                        display: "flex",
-                                                        gap: "8px",
-                                                        alignItems: "center",
-                                                    }}
-                                                >
-                                                    <div style={{ flex: 1 }}>
-                                                        <OrgUnitSelect
-                                                            value={selectedMDA}
-                                                            onChange={(
-                                                                value,
-                                                            ) => {
-                                                                setSelectedMDA(
-                                                                    typeof value ===
-                                                                        "string"
-                                                                        ? value
-                                                                        : undefined,
-                                                                );
-                                                                setDisplayedProgramme(
-                                                                    reportDisplayed
-                                                                        ? selectedProgramme
-                                                                        : undefined,
-                                                                );
-                                                            }}
-                                                        />
-                                                    </div>
+                                                <div className="policy-actions-filter-field">
+                                                    <OrgUnitSelect
+                                                        showFormItem={false}
+                                                        value={selectedMDA}
+                                                        onChange={(value) => {
+                                                            setSelectedMDA(
+                                                                typeof value ===
+                                                                    "string"
+                                                                    ? value
+                                                                    : undefined,
+                                                            );
+                                                        }}
+                                                    />
                                                     {selectedMDA && (
                                                         <Button
                                                             type="text"
@@ -504,33 +546,37 @@ function Component() {
                                                     )}
                                                 </div>
                                             </div>
-                                            <div>
+                                            <div className="policy-actions-filter-row">
                                                 <Text
                                                     strong
-                                                    style={{
-                                                        fontSize: "14px",
-                                                        display: "block",
-                                                        marginBottom: "4px",
-                                                    }}
+                                                    className="policy-actions-filter-label"
                                                 >
-                                                    Period range
+                                                    Period:
                                                 </Text>
-                                                <DatePicker.RangePicker
-                                                    picker="month"
-                                                    style={{ width: "100%" }}
-                                                    value={selectedPeriodRange}
-                                                    onChange={(value) =>
-                                                        setSelectedPeriodRange(
-                                                            value
-                                                                ? [
-                                                                      value[0],
-                                                                      value[1],
-                                                                  ]
-                                                                : null,
-                                                        )
-                                                    }
-                                                    allowClear
-                                                />
+                                                <div className="policy-actions-filter-field policy-actions-period-field">
+                                                    <DatePicker.RangePicker
+                                                        picker="month"
+                                                        style={{
+                                                            width:
+                                                                isCompactScreen
+                                                                    ? "100%"
+                                                                    : "300px",
+                                                            maxWidth: "100%",
+                                                        }}
+                                                        value={selectedPeriodRange}
+                                                        onChange={(value) =>
+                                                            setSelectedPeriodRange(
+                                                                value
+                                                                    ? [
+                                                                          value[0],
+                                                                          value[1],
+                                                                      ]
+                                                                    : null,
+                                                            )
+                                                        }
+                                                        allowClear
+                                                    />
+                                                </div>
                                             </div>
                                         </Space>
                                     ),
@@ -541,29 +587,43 @@ function Component() {
                 </Col>
             </Row>
 
-            {reportDisplayed ? (
+            {displayedProgramme ? (
                 <div
+                    ref={reportPanelRef}
+                    className="policy-actions-report-panel"
                     style={{
                         background: "#fff",
                         padding: "6px",
-                        borderRadius: "4px",
+                        borderRadius: "3px",
                         boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                        display: "flex",
+                        flexDirection: "column",
+                        minHeight: 0,
+                        overflow: "hidden",
+                        height: reportPanelHeight,
                     }}
                 >
                     <div
+                        ref={reportHeaderRef}
+                        className="policy-actions-report-header"
                         style={{
                             marginBottom: "8px",
                             background: "#eef4fb",
                             border: "1px solid #d7e3f1",
-                            borderRadius: "4px",
+                            borderRadius: "3px",
                             padding: "8px 10px",
                         }}
                     >
-                        <Space
-                            align="center"
+                        <div
                             style={{
-                                width: "100%",
+                                display: "flex",
+                                alignItems: isCompactScreen
+                                    ? "stretch"
+                                    : "center",
                                 justifyContent: "space-between",
+                                width: "100%",
+                                gap: "12px",
+                                flexWrap: "wrap",
                             }}
                         >
                             <Text
@@ -577,27 +637,46 @@ function Component() {
                                 {selectedProgrammeTitle ?? "Selected programme"}{" "}
                                 - {reportScope}
                             </Text>
-                            <Dropdown
-                                menu={exportMenuItems}
-                                trigger={["click"]}
-                                placement="bottomLeft"
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: "10px",
+                                    flexWrap: "wrap",
+                                }}
                             >
                                 <Button
-                                    size="small"
                                     icon={<DownloadOutlined />}
-                                    title="Download / Export Options"
                                     disabled={!hasRows}
-                                />
-                            </Dropdown>
-                        </Space>
+                                    className="policy-actions-download-button"
+                                    onClick={handlePdfExport}
+                                >
+                                    Download PDF
+                                </Button>
+                                <Button
+                                    icon={<DownloadOutlined />}
+                                    disabled={!hasRows}
+                                    className="policy-actions-download-button"
+                                    onClick={() => {
+                                        void handleExcelExport();
+                                    }}
+                                >
+                                    Download Excel
+                                </Button>
+                            </div>
+                        </div>
                     </div>
 
-                    <Row gutter={[12, 12]} style={{ marginBottom: "12px" }}>
+                    <Row
+                        ref={summaryRef}
+                        gutter={[12, 12]}
+                        style={{ marginBottom: "12px", flex: "0 0 auto" }}
+                    >
                         {summaryCards.map((card) => (
                             <Col xs={24} sm={12} md={8} xl={4} key={card.key}>
                                 <Card
+                                    className="policy-actions-summary-card"
                                     size="small"
-                                    bordered
+                                    variant="outlined"
                                     style={{ backgroundColor: card.color }}
                                     styles={{ body: { padding: "12px" } }}
                                 >
@@ -606,6 +685,10 @@ function Component() {
                                             display: "flex",
                                             flexDirection: "column",
                                             gap: "4px",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            textAlign: "center",
+                                            minHeight: "72px",
                                         }}
                                     >
                                         <Text
@@ -633,31 +716,50 @@ function Component() {
                     </Row>
 
                     {tableError && (
-                        <Typography.Text type="danger">
+                        <Typography.Text
+                            type="danger"
+                            style={{ marginBottom: "8px", flex: "0 0 auto" }}
+                        >
                             {tableError}
                         </Typography.Text>
                     )}
 
-                    <Table
-                        className="policy-actions-table"
-                        rowKey="key"
-                        dataSource={pagedRows}
-                        columns={dynamicColumns}
-                        bordered
-                        size="small"
-                        tableLayout="fixed"
-                        loading={
-                            metadataQuery.isFetching || lineListQuery.isFetching
-                        }
-                        pagination={false}
-                        scroll={{ x: 1480 }}
-                        locale={{
-                            emptyText: (
-                                <Empty description={emptyTableDescription} />
-                            ),
-                        }}
-                    />
                     <div
+                        className="policy-actions-table-region"
+                        style={{
+                            flex: 1,
+                            minHeight: 0,
+                            overflow: "hidden",
+                        }}
+                    >
+                        <Table
+                            className="policy-actions-table"
+                            rowKey="key"
+                            dataSource={pagedRows}
+                            columns={dynamicColumns}
+                            bordered
+                            size="small"
+                            tableLayout="auto"
+                            loading={
+                                metadataQuery.isFetching ||
+                                lineListQuery.isFetching
+                            }
+                            pagination={false}
+                            sticky
+                            scroll={{
+                                x: isCompactScreen ? "max-content" : undefined,
+                                y: tableScrollY,
+                            }}
+                            locale={{
+                                emptyText: (
+                                    <Empty description={emptyTableDescription} />
+                                ),
+                            }}
+                        />
+                    </div>
+                    <div
+                        ref={footerRef}
+                        className="policy-actions-footer"
                         style={{
                             display: "flex",
                             alignItems: "center",
@@ -666,8 +768,9 @@ function Component() {
                             borderTop: "1px solid #dcdcdc",
                             background: "#f4f6f8",
                             padding: "10px 12px",
-                            marginTop: "-1px",
                             flexWrap: "wrap",
+                            position: "relative",
+                            zIndex: 1,
                         }}
                     >
                         <div style={{ minWidth: "180px", color: "#435266" }}>
@@ -724,39 +827,100 @@ function Component() {
                     </div>
                 </div>
             ) : (
-                <div style={{ margin: "60px 0", textAlign: "center" }}>
+                <div
+                    className="policy-actions-empty-state"
+                    style={{ margin: "0", textAlign: "center" }}
+                >
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="Select a targeted Tracking Programme and click 'Display report' to populate data values."
+                        description="Choose a tracking programme to load policy action records. Filters apply automatically."
                     />
                 </div>
             )}
-
-        </Space>
+        </div>
     );
 }
 
-function getColumnWidth(label: string) {
+function getColumnWidth(label: string): number | undefined {
     const normalized = label.toLowerCase();
-    if (normalized.includes("policy action")) return 320;
-    if (normalized.includes("directive")) return 320;
-    if (normalized.includes("remarks")) return 110;
+    if (
+        normalized.includes("policy action") ||
+        normalized.includes("directive") ||
+        normalized.includes("description") ||
+        normalized.includes("remarks")
+    ) {
+        return 210;
+    }
     if (normalized === "vote" || normalized.includes("organisation unit")) {
         return 120;
     }
-    if (normalized.includes("contributing")) return 150;
-    if (normalized.includes("responsible officer")) return 150;
-    if (normalized.includes("performance rating")) return 110;
-    if (normalized.includes("source")) return 100;
-    if (normalized.includes("progress")) return 90;
-    if (normalized.includes("start date") || normalized.includes("end date")) {
-        return 110;
+    if (
+        normalized.includes("contributing") ||
+        normalized.includes("responsible officer") ||
+        normalized.includes("institution") ||
+        normalized.includes("ministry")
+    ) {
+        return 140;
     }
-    if (normalized.includes("duration")) return 90;
-    if (normalized.includes("action id")) return 80;
-    if (normalized.includes("priority")) return 88;
-    if (normalized.includes("delayed")) return 80;
-    return 100;
+    if (normalized.includes("start date") || normalized.includes("end date")) {
+        return 112;
+    }
+    if (normalized.includes("duration")) return 88;
+    if (
+        normalized.includes("progress") ||
+        normalized.includes("priority") ||
+        normalized.includes("delayed") ||
+        normalized.includes("status") ||
+        normalized.includes("performance rating")
+    ) {
+        return 84;
+    }
+    if (normalized.includes("action id")) return 76;
+    if (normalized.includes("source")) return 130;
+    return undefined;
+}
+
+function getColumnAlignment(label: string): "left" | "center" {
+    const normalized = label.toLowerCase();
+    if (
+        normalized.includes("progress") ||
+        normalized.includes("priority") ||
+        normalized.includes("delayed") ||
+        normalized.includes("status") ||
+        normalized.includes("performance rating") ||
+        normalized.includes("date") ||
+        normalized.includes("duration") ||
+        normalized.includes("action id")
+    ) {
+        return "center";
+    }
+    return "left";
+}
+
+function shouldEllipsizeColumn(label: string) {
+    const normalized = label.toLowerCase();
+    return (
+        normalized.includes("policy action") ||
+        normalized.includes("directive") ||
+        normalized.includes("description") ||
+        normalized.includes("remarks") ||
+        normalized.includes("source") ||
+        normalized.includes("contributing") ||
+        normalized.includes("responsible officer") ||
+        normalized.includes("organisation unit") ||
+        normalized === "vote"
+    );
+}
+
+function formatPeriodRangeLabel(
+    value: [Dayjs | null, Dayjs | null] | null,
+): string {
+    if (!value) return "All periods";
+    const [start, end] = value;
+    const startLabel = start?.format("MMM YYYY");
+    const endLabel = end?.format("MMM YYYY");
+    if (startLabel && endLabel) return `${startLabel} - ${endLabel}`;
+    return startLabel ?? endLabel ?? "All periods";
 }
 
 function findStartDateColumn(
@@ -893,9 +1057,10 @@ function highlightedCell(backgroundColor: string): React.CSSProperties {
 }
 
 function getSharedCellStyle(label: string): React.CSSProperties {
+    const width = getColumnWidth(label);
     return {
-        width: getColumnWidth(label),
-        minWidth: getColumnWidth(label),
+        width,
+        minWidth: width,
         verticalAlign: "top",
         padding: "6px 8px",
         fontFamily: "Cambria, Georgia, serif",
