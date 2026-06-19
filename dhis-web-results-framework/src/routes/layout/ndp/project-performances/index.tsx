@@ -87,11 +87,15 @@ function Component() {
             programId: displayedProgramme,
             rootOrgUnitId: effectiveRootOrgUnitId,
             orgUnitId: reportOrgUnitId,
+            page: currentPage,
+            pageSize,
             enabled: Boolean(displayedProgramme),
         }),
     );
 
     const metadata = metadataQuery.data ?? [];
+    const lineListRows = lineListQuery.data?.rows ?? [];
+    const totalRecords = lineListQuery.data?.total ?? 0;
     const attributeMetadata = useMemo(
         () => metadata.filter((item) => item.source === "attribute"),
         [metadata],
@@ -118,8 +122,8 @@ function Component() {
         [attributeMetadata],
     );
     const rows = useMemo(
-        () => sortRowsByStartDateDescending(lineListQuery.data ?? [], startDateColumn),
-        [lineListQuery.data, startDateColumn],
+        () => sortRowsByStartDateDescending(lineListRows, startDateColumn),
+        [lineListRows, startDateColumn],
     );
 
     const filteredRows = useMemo(() => {
@@ -172,19 +176,11 @@ function Component() {
 
     const hasRows = filteredRows.length > 0;
     const reportScope = selectedMDA ? "Selected MDA" : "All MDAs";
-    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
     const emptyTableDescription =
         !reportOrgUnitId
             ? "No organisation unit is available for this user. Select a Vote in Advanced report filters to load entries."
             : "No entries found mapping criteria parameters.";
-    const pagedRows = useMemo(
-        () =>
-            filteredRows.slice(
-                (currentPage - 1) * pageSize,
-                currentPage * pageSize,
-            ),
-        [currentPage, filteredRows, pageSize],
-    );
     const selectedRow = useMemo(
         () => filteredRows.find((row) => row.key === expandedRowKey),
         [expandedRowKey, filteredRows],
@@ -738,7 +734,8 @@ function Component() {
                         <Table
                             className="project-performance-table"
                             rowKey="key"
-                            dataSource={pagedRows}
+                            style={{ margin: 0, padding: 0 }}
+                            dataSource={filteredRows}
                             columns={mainColumns}
                             bordered
                             size="small"
@@ -750,7 +747,7 @@ function Component() {
                             pagination={false}
                             sticky
                             scroll={{
-                                x: isCompactScreen ? "max-content" : undefined,
+                                x: "max-content",
                                 y: tableScrollY,
                             }}
                             expandable={{
@@ -819,7 +816,7 @@ function Component() {
                             <Select
                                 value={pageSize}
                                 style={{ width: 90 }}
-                                options={[5, 10, 25, 50, 100].map((value) => ({
+                                options={[5, 10, 25, 50, 100, 200, 500].map((value) => ({
                                     label: value.toString(),
                                     value,
                                 }))}

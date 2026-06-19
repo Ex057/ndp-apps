@@ -898,46 +898,170 @@ export const trackerLineListQueryOptions = (
         programId,
         rootOrgUnitId,
         orgUnitId,
+        page = 1,
+        pageSize = 50,
+        fetchAll = false,
         enabled = true,
     }: {
         programId?: string;
         rootOrgUnitId?: string;
         orgUnitId?: string;
+        page?: number;
+        pageSize?: number;
+        fetchAll?: boolean;
         enabled?: boolean;
     },
 ) => {
     return queryOptions({
-        queryKey: ["tracker-line-list", programId, rootOrgUnitId, orgUnitId],
+        queryKey: [
+            "tracker-line-list",
+            programId,
+            rootOrgUnitId,
+            orgUnitId,
+            page,
+            pageSize,
+            fetchAll,
+        ],
         enabled: Boolean(programId && rootOrgUnitId && orgUnitId && enabled),
         queryFn: async () => {
-            if (!programId || !rootOrgUnitId || !orgUnitId) return [];
+            if (!programId || !rootOrgUnitId || !orgUnitId) {
+                return { rows: [], total: 0 } satisfies TrackerLineListResult;
+            }
 
+            if (fetchAll) {
+                const directTrackedEntityInstances =
+                    await fetchTrackedEntitiesSafely(engine, {
+                        programId,
+                        orgUnitId,
+                        pageSize: 1000,
+                    });
+
+                const shouldFallbackToRootScope =
+                    orgUnitId !== rootOrgUnitId &&
+                    directTrackedEntityInstances.length === 0;
+
+                const trackedEntityInstances = shouldFallbackToRootScope
+                    ? await fetchTrackedEntitiesSafely(engine, {
+                          programId,
+                          orgUnitId: rootOrgUnitId,
+                          pageSize: 1000,
+                      })
+                    : directTrackedEntityInstances;
+
+                const orgUnitDetailsById =
+                    trackedEntityInstances.length > 0
+                        ? await fetchOrgUnitDetailsByIdSafely(
+                              engine,
+                              Array.from(
+                                  new Set(
+                                      trackedEntityInstances.flatMap(({ orgUnit }) =>
+                                          orgUnit ? [orgUnit] : [],
+                                      ),
+                                  ),
+                              ),
+                          )
+                        : new Map<string, { name: string; path?: string }>();
+
+                const processedRows = mapTrackedEntitiesToRows(
+                    trackedEntityInstances,
+                    orgUnitDetailsById,
+                );
+
+                const filteredRows =
+                    shouldFallbackToRootScope && orgUnitId !== rootOrgUnitId
+                        ? processedRows.filter((row) => {
+                              const path = row.orgUnit
+                                  ? orgUnitDetailsById.get(row.orgUnit)?.path
+                                  : undefined;
+                              return Boolean(
+                                  path &&
+                                      (path === `/${orgUnitId}` ||
+                                          path.startsWith(`/${orgUnitId}/`) ||
+                                          path.includes(`/${orgUnitId}/`)),
+                              );
+                          })
+                        : processedRows;
+
+                return {
+                    rows: orderBy(
+                        filteredRows,
+                        [
+                            (row) =>
+                                String(
+                                    row.orgUnitName ?? row.orgUnit ?? "",
+                                ).toLowerCase(),
+                        ],
+                        ["asc"],
+                    ),
+                    total: filteredRows.length,
+                } satisfies TrackerLineListResult;
+            }
+
+            const directPageResponse = await fetchTrackedEntityPage(engine, {
+                programId,
+                orgUnitId,
+                page,
+                pageSize,
+            });
             const directTrackedEntityInstances =
-                await fetchTrackedEntitiesSafely(engine, {
-                    programId,
-                    orgUnitId,
-                    pageSize: 50,
-                });
+                directPageResponse.trackedEntities.trackedEntityInstances ?? [];
 
             const shouldFallbackToRootScope =
                 orgUnitId !== rootOrgUnitId &&
                 directTrackedEntityInstances.length === 0;
 
-            const trackedEntityInstances = shouldFallbackToRootScope
-                ? await fetchTrackedEntitiesSafely(engine, {
-                      programId,
-                      orgUnitId: rootOrgUnitId,
-                      pageSize: 50,
-                  })
-                : directTrackedEntityInstances;
+            if (!shouldFallbackToRootScope) {
+                const orgUnitDetailsById =
+                    directTrackedEntityInstances.length > 0
+                        ? await fetchOrgUnitDetailsByIdSafely(
+                              engine,
+                              Array.from(
+                                  new Set(
+                                      directTrackedEntityInstances.flatMap(
+                                          ({ orgUnit }) =>
+                                              orgUnit ? [orgUnit] : [],
+                                      ),
+                                  ),
+                              ),
+                          )
+                        : new Map<string, { name: string; path?: string }>();
+
+                const processedRows = mapTrackedEntitiesToRows(
+                    directTrackedEntityInstances,
+                    orgUnitDetailsById,
+                );
+
+                return {
+                    rows: orderBy(
+                        processedRows,
+                        [
+                            (row) =>
+                                String(
+                                    row.orgUnitName ?? row.orgUnit ?? "",
+                                ).toLowerCase(),
+                        ],
+                        ["asc"],
+                    ),
+                    total:
+                        directPageResponse.trackedEntities.pager?.total ??
+                        processedRows.length,
+                } satisfies TrackerLineListResult;
+            }
+
+            const fallbackTrackedEntityInstances =
+                await fetchTrackedEntitiesSafely(engine, {
+                    programId,
+                    orgUnitId: rootOrgUnitId,
+                    pageSize: 1000,
+                });
 
             const orgUnitDetailsById =
-                trackedEntityInstances.length > 0
+                fallbackTrackedEntityInstances.length > 0
                     ? await fetchOrgUnitDetailsByIdSafely(
                           engine,
                           Array.from(
                               new Set(
-                                  trackedEntityInstances.flatMap(({ orgUnit }) =>
+                                  fallbackTrackedEntityInstances.flatMap(({ orgUnit }) =>
                                       orgUnit ? [orgUnit] : [],
                                   ),
                               ),
@@ -945,78 +1069,22 @@ export const trackerLineListQueryOptions = (
                       )
                     : new Map<string, { name: string; path?: string }>();
 
-            const processedRows = trackedEntityInstances.map<TrackerLineListRow>(
-                (trackedEntity) => {
-                    const trackedEntityId =
-                        trackedEntity.trackedEntityInstance;
-                    const orgUnitDetails = trackedEntity.orgUnit
-                        ? orgUnitDetailsById.get(trackedEntity.orgUnit)
-                        : undefined;
-                    const row: TrackerLineListRow = {
-                        key: trackedEntityId,
-                        trackedEntity: trackedEntityId,
-                        orgUnit: trackedEntity.orgUnit,
-                        orgUnitName:
-                            trackedEntity.orgUnitName ??
-                            orgUnitDetails?.name ??
-                            trackedEntity.orgUnit,
-                    };
+            const filteredRows = mapTrackedEntitiesToRows(
+                fallbackTrackedEntityInstances,
+                orgUnitDetailsById,
+            ).filter((row) => {
+                const path = row.orgUnit
+                    ? orgUnitDetailsById.get(row.orgUnit)?.path
+                    : undefined;
+                return Boolean(
+                    path &&
+                        (path === `/${orgUnitId}` ||
+                            path.startsWith(`/${orgUnitId}/`) ||
+                            path.includes(`/${orgUnitId}/`)),
+                );
+            });
 
-                    trackedEntity.attributes?.forEach(({ attribute, value }) => {
-                        row[attribute] = value;
-                    });
-
-                    const latestValues = new Map<
-                        string,
-                        { value: string; occurredAt: string }
-                    >();
-
-                    trackedEntity.enrollments?.forEach(({ events }) => {
-                        events?.forEach((event) => {
-                            const occurredAt =
-                                event.eventDate ?? event.occurredAt ?? "";
-                            event.dataValues?.forEach(
-                                ({ dataElement, value }) => {
-                                    const previous =
-                                        latestValues.get(dataElement);
-                                    if (
-                                        !previous ||
-                                        occurredAt >= previous.occurredAt
-                                    ) {
-                                        latestValues.set(dataElement, {
-                                            value,
-                                            occurredAt,
-                                        });
-                                    }
-                                },
-                            );
-                        });
-                    });
-
-                    latestValues.forEach(({ value }, dataElement) => {
-                        row[dataElement] = value;
-                    });
-
-                    return row;
-                },
-            );
-
-            const filteredRows =
-                shouldFallbackToRootScope && orgUnitId !== rootOrgUnitId
-                    ? processedRows.filter((row) => {
-                          const path = row.orgUnit
-                              ? orgUnitDetailsById.get(row.orgUnit)?.path
-                              : undefined;
-                          return Boolean(
-                              path &&
-                                  (path === `/${orgUnitId}` ||
-                                      path.startsWith(`/${orgUnitId}/`) ||
-                                      path.includes(`/${orgUnitId}/`)),
-                          );
-                      })
-                    : processedRows;
-
-            return orderBy(
+            const sortedFilteredRows = orderBy(
                 filteredRows,
                 [
                     (row) =>
@@ -1024,6 +1092,12 @@ export const trackerLineListQueryOptions = (
                 ],
                 ["asc"],
             );
+            const startIndex = (page - 1) * pageSize;
+
+            return {
+                rows: sortedFilteredRows.slice(startIndex, startIndex + pageSize),
+                total: sortedFilteredRows.length,
+            } satisfies TrackerLineListResult;
         },
     });
 };
@@ -1188,6 +1262,108 @@ type DeprecatedTrackerTrackedEntity = {
     }>;
 };
 
+type DeprecatedTrackerResponse = {
+    trackedEntities: {
+        pager?: {
+            page?: number;
+            pageCount?: number;
+            total?: number;
+        };
+        trackedEntityInstances?: DeprecatedTrackerTrackedEntity[];
+    };
+};
+
+type TrackerLineListResult = {
+    rows: TrackerLineListRow[];
+    total: number;
+};
+
+async function fetchTrackedEntityPage(
+    engine: ReturnType<typeof useDataEngine>,
+    {
+        programId,
+        orgUnitId,
+        page,
+        pageSize,
+    }: {
+        programId: string;
+        orgUnitId: string;
+        page: number;
+        pageSize: number;
+    },
+) {
+    const response = await engine.query({
+        trackedEntities: {
+            resource: "trackedEntityInstances.json",
+            params: {
+                program: programId,
+                ou: orgUnitId,
+                ouMode: "DESCENDANTS",
+                page,
+                pageSize,
+                totalPages: true,
+                fields: [
+                    "trackedEntityInstance",
+                    "orgUnit",
+                    "orgUnitName",
+                    "attributes[attribute,value]",
+                    "enrollments[enrollment,program,status,enrollmentDate,eventDate,events[event,programStage,status,eventDate,dataValues[dataElement,value]]]",
+                ].join(","),
+            },
+        },
+    });
+
+    return response as unknown as DeprecatedTrackerResponse;
+}
+
+function mapTrackedEntitiesToRows(
+    trackedEntityInstances: DeprecatedTrackerTrackedEntity[],
+    orgUnitDetailsById: Map<string, { name: string; path?: string }>,
+) {
+    return trackedEntityInstances.map<TrackerLineListRow>((trackedEntity) => {
+        const trackedEntityId = trackedEntity.trackedEntityInstance;
+        const orgUnitDetails = trackedEntity.orgUnit
+            ? orgUnitDetailsById.get(trackedEntity.orgUnit)
+            : undefined;
+        const row: TrackerLineListRow = {
+            key: trackedEntityId,
+            trackedEntity: trackedEntityId,
+            orgUnit: trackedEntity.orgUnit,
+            orgUnitName:
+                trackedEntity.orgUnitName ??
+                orgUnitDetails?.name ??
+                trackedEntity.orgUnit,
+        };
+
+        trackedEntity.attributes?.forEach(({ attribute, value }) => {
+            row[attribute] = value;
+        });
+
+        const latestValues = new Map<string, { value: string; occurredAt: string }>();
+
+        trackedEntity.enrollments?.forEach(({ events }) => {
+            events?.forEach((event) => {
+                const occurredAt = event.eventDate ?? event.occurredAt ?? "";
+                event.dataValues?.forEach(({ dataElement, value }) => {
+                    const previous = latestValues.get(dataElement);
+                    if (!previous || occurredAt >= previous.occurredAt) {
+                        latestValues.set(dataElement, {
+                            value,
+                            occurredAt,
+                        });
+                    }
+                });
+            });
+        });
+
+        latestValues.forEach(({ value }, dataElement) => {
+            row[dataElement] = value;
+        });
+
+        return row;
+    });
+}
+
 async function fetchAllTrackedEntityPages(
     engine: ReturnType<typeof useDataEngine>,
     {
@@ -1205,34 +1381,13 @@ async function fetchAllTrackedEntityPages(
     let pageCount = 1;
 
     do {
-        const response = await engine.query({
-            trackedEntities: {
-                resource: "trackedEntityInstances.json",
-                params: {
-                    program: programId,
-                    ou: orgUnitId,
-                    ouMode: "DESCENDANTS",
-                    page,
-                    pageSize,
-                    fields: [
-                        "trackedEntityInstance",
-                        "orgUnit",
-                        "orgUnitName",
-                        "attributes[attribute,value]",
-                        "enrollments[enrollment,program,status,enrollmentDate,eventDate,events[event,programStage,status,eventDate,dataValues[dataElement,value]]]",
-                    ].join(","),
-                },
-            },
+        const response = await fetchTrackedEntityPage(engine, {
+            programId,
+            orgUnitId,
+            page,
+            pageSize,
         });
-        const { trackedEntities } = response as unknown as {
-            trackedEntities: {
-                pager?: {
-                    page?: number;
-                    pageCount?: number;
-                };
-                trackedEntityInstances?: DeprecatedTrackerTrackedEntity[];
-            };
-        };
+        const { trackedEntities } = response;
 
         allRows.push(...(trackedEntities.trackedEntityInstances ?? []));
         pageCount = trackedEntities.pager?.pageCount ?? pageCount;

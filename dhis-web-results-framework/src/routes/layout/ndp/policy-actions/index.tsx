@@ -88,6 +88,8 @@ function Component() {
             programId: displayedProgramme,
             rootOrgUnitId: effectiveRootOrgUnitId,
             orgUnitId: reportOrgUnitId,
+            page: currentPage,
+            pageSize,
             enabled: Boolean(displayedProgramme),
         }),
     );
@@ -96,26 +98,30 @@ function Component() {
             programId: displayedProgramme,
             rootOrgUnitId: effectiveRootOrgUnitId,
             orgUnitId: reportOrgUnitId,
+            fetchAll: true,
             enabled: Boolean(displayedProgramme),
         }),
     );
 
     const metadata = metadataQuery.data ?? [];
+    const lineListRows = lineListQuery.data?.rows ?? [];
+    const summaryLineListRows = summaryLineListQuery.data?.rows ?? [];
+    const totalRecords = lineListQuery.data?.total ?? 0;
     const startDateColumn = useMemo(
         () => findStartDateColumn(metadata),
         [metadata],
     );
     const sortedRows = useMemo(
-        () => sortRowsByStartDateDescending(lineListQuery.data ?? [], startDateColumn),
-        [lineListQuery.data, startDateColumn],
+        () => sortRowsByStartDateDescending(lineListRows, startDateColumn),
+        [lineListRows, startDateColumn],
     );
     const summaryRows = useMemo(
         () =>
             sortRowsByStartDateDescending(
-                summaryLineListQuery.data ?? [],
+                summaryLineListRows,
                 startDateColumn,
             ),
-        [startDateColumn, summaryLineListQuery.data],
+        [startDateColumn, summaryLineListRows],
     );
     const rows = useMemo(
         () =>
@@ -173,19 +179,11 @@ function Component() {
     );
     const hasRows = rows.length > 0;
     const reportScope = selectedMDA ? "Selected MDA" : "All MDAs";
-    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
     const emptyTableDescription =
         !reportOrgUnitId
             ? "No organisation unit is available for this user. Select a Vote in Advanced report filters to load entries."
             : "No entries found mapping criteria parameters.";
-    const pagedRows = useMemo(
-        () =>
-            rows.slice(
-                (currentPage - 1) * pageSize,
-                currentPage * pageSize,
-            ),
-        [currentPage, pageSize, rows],
-    );
     const summaryCards = useMemo(
         () => [
             {
@@ -735,7 +733,8 @@ function Component() {
                         <Table
                             className="policy-actions-table"
                             rowKey="key"
-                            dataSource={pagedRows}
+                            style={{ margin: 0, padding: 0 }}
+                            dataSource={rows}
                             columns={dynamicColumns}
                             bordered
                             size="small"
@@ -747,7 +746,7 @@ function Component() {
                             pagination={false}
                             sticky
                             scroll={{
-                                x: isCompactScreen ? "max-content" : undefined,
+                                x: "max-content",
                                 y: tableScrollY,
                             }}
                             locale={{
@@ -791,7 +790,7 @@ function Component() {
                             <Select
                                 value={pageSize}
                                 style={{ width: 90 }}
-                                options={[5, 10, 25, 50, 100].map((value) => ({
+                                options={[5, 10, 25, 50, 100, 200, 500].map((value) => ({
                                     label: value.toString(),
                                     value,
                                 }))}
