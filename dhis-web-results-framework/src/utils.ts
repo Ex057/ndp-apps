@@ -801,7 +801,17 @@ export const flattenOrganisationUnitDataSets = (
 
 export const processDataElements = (dataElements: DataElement[]) => {
     return dataElements.flatMap(
-        ({ attributeValues, id, name, code, dataSetElements, ...rest }) => {
+        ({
+            attributeValues,
+            id,
+            name,
+            displayName,
+            code,
+            valueType,
+            categoryCombo,
+            dataSetElements,
+            ...rest
+        }) => {
             const organisationUnits = new Set(
                 dataSetElements.flatMap(({ dataSet: { organisationUnits } }) =>
                     organisationUnits.map((ou) => ou.path),
@@ -810,13 +820,58 @@ export const processDataElements = (dataElements: DataElement[]) => {
             const dataSets = new Set(
                 dataSetElements.flatMap(({ dataSet }) => dataSet.id),
             );
+            const dataSetNames = new Set(
+                dataSetElements.flatMap(({ dataSet }) =>
+                    dataSet.name ? [dataSet.name] : [],
+                ),
+            );
+            const voteCodes = new Set(
+                dataSetElements.flatMap(({ dataSet: { organisationUnits } }) =>
+                    organisationUnits.map((ou) => ou.code),
+                ),
+            );
+            const reportingCycles = new Set(
+                dataSetElements.flatMap(({ dataSet }) =>
+                    dataSet.periodType ? [dataSet.periodType] : [],
+                ),
+            );
+            const reportingContexts = new Set(
+                dataSetElements.flatMap(({ dataSet }) =>
+                    dataSet.organisationUnits.map(
+                        (ou) => `${dataSet.id}:${ou.code}`,
+                    ),
+                ),
+            );
+            const datasetAssignments = dataSetElements.flatMap(
+                ({ dataSet: { id, name, periodType, organisationUnits } }) =>
+                    organisationUnits.map((ou) => ({
+                        dataSetId: id,
+                        dataSetName: name,
+                        periodType,
+                        orgUnitId: ou.id,
+                        orgUnitCode: ou.code,
+                        orgUnitName: ou.displayName,
+                        path: ou.path,
+                    })),
+            );
+            const derivedName = displayName ?? name;
+            const disaggregation =
+                categoryCombo?.displayName ??
+                categoryCombo?.name ??
+                "Default";
 
             const data = Array.from(organisationUnits).map((ou) => {
                 const currentOu = ou.split("/").at(-1);
                 return {
                     id,
-                    name,
+                    name: derivedName,
+                    displayName: derivedName,
                     code,
+                    valueType,
+                    disaggregation:
+                        disaggregation.toLowerCase() === "default"
+                            ? "-"
+                            : disaggregation,
                     ...fromPairs(
                         attributeValues.map(({ value, attribute: { id } }) => [
                             id,
@@ -836,6 +891,12 @@ export const processDataElements = (dataElements: DataElement[]) => {
                     attributes: attributeValues.map(({ value }) => value),
                     organisationUnits: Array.from(organisationUnits),
                     dataSets: Array.from(dataSets),
+                    dataSetNames: Array.from(dataSetNames),
+                    datasetAssignments,
+                    voteCodes: Array.from(voteCodes).sort(),
+                    reportingCycles: Array.from(reportingCycles).sort(),
+                    completenessConfigured: dataSets.size,
+                    completenessTotal: reportingContexts.size,
                     orgUnit: currentOu,
                     ...rest,
                 };

@@ -123,6 +123,15 @@ function Component() {
             ),
         [startDateColumn, summaryLineListRows],
     );
+    const summaryFilteredRows = useMemo(
+        () =>
+            filterRowsByPeriodRange(
+                summaryRows,
+                startDateColumn,
+                selectedPeriodRange,
+            ),
+        [reportOrgUnitId, selectedPeriodRange, startDateColumn, summaryRows],
+    );
     const rows = useMemo(
         () =>
             filterRowsByPeriodRange(
@@ -189,11 +198,7 @@ function Component() {
             {
                 key: "total-actions",
                 title: "Policy Actions",
-                value: filterRowsByPeriodRange(
-                    summaryRows,
-                    startDateColumn,
-                    selectedPeriodRange,
-                ).filter(
+                value: summaryFilteredRows.filter(
                     (row) =>
                         getDisplayValue(
                             row["OkGVyVExDHQ"],
@@ -206,11 +211,7 @@ function Component() {
             {
                 key: "high-priority",
                 title: "High Priority",
-                value: filterRowsByPeriodRange(
-                    summaryRows,
-                    startDateColumn,
-                    selectedPeriodRange,
-                ).filter(
+                value: summaryFilteredRows.filter(
                     (row) =>
                         getDisplayValue(
                             row["qxsx06YcyCI"],
@@ -228,11 +229,7 @@ function Component() {
             ].map((status) => ({
                 key: `progress-${status.toLowerCase().replace(/\s+/g, "-")}`,
                 title: status,
-                value: filterRowsByPeriodRange(
-                    summaryRows,
-                    startDateColumn,
-                    selectedPeriodRange,
-                ).filter(
+                value: summaryFilteredRows.filter(
                     (row) =>
                         getDisplayValue(
                             row["bqmgZT9Hiwx"],
@@ -253,7 +250,7 @@ function Component() {
                           : "#9d2d22",
             })),
         ],
-        [metadataById, selectedPeriodRange, startDateColumn, summaryRows],
+        [metadataById, summaryFilteredRows],
     );
 
     React.useEffect(() => {
@@ -997,7 +994,7 @@ function getDisplayValue(
         if (rawValue.toLowerCase() === "false") return "No";
     }
 
-    return rawValue;
+    return formatNumericDisplayValue(rawValue);
 }
 
 function getCellHighlightStyle(
@@ -1087,6 +1084,17 @@ function renderDynamicCellWithOptionSets(
             {displayValue}
         </div>
     );
+}
+
+function formatNumericDisplayValue(value: string) {
+    if (!/^-?\d+\.\d+$/.test(value)) {
+        return value;
+    }
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return value;
+    }
+    return numericValue.toFixed(2).replace(/\.00$/, "");
 }
 
 function downloadCsv(

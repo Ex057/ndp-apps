@@ -932,7 +932,8 @@ function getDisplayValue(
     const optionsMap = new Map(
         meta.optionSet?.options.map(({ code, name }) => [code, name]) ?? [],
     );
-    return optionsMap.get(value ?? "") ?? value ?? "";
+    const resolvedValue = optionsMap.get(value ?? "") ?? value ?? "";
+    return formatNumericDisplayValue(resolvedValue);
 }
 
 function getSharedCellStyle(label: string): React.CSSProperties {
@@ -963,6 +964,17 @@ function renderDynamicCellWithOptionSets(
             {getDisplayValue(value, meta)}
         </div>
     );
+}
+
+function formatNumericDisplayValue(value: string) {
+    if (!/^-?\d+\.\d+$/.test(value)) {
+        return value;
+    }
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return value;
+    }
+    return numericValue.toFixed(2).replace(/\.00$/, "");
 }
 
 function downloadCsv(

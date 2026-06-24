@@ -12,11 +12,18 @@ type LeafColumn = {
     title: string;
     width?: number;
     align?: "left" | "center" | "right";
+    onCell?: (record: ExportRow) => { style?: Record<string, unknown> } | undefined;
+    onHeaderCell?: () => { style?: Record<string, unknown> } | undefined;
     render?: (
         value: unknown,
         record: ExportRow,
         index: number,
     ) => React.ReactNode;
+};
+
+type ExportCellData = {
+    text: string;
+    style?: Record<string, unknown>;
 };
 
 function flattenColumns(columns: TableProps<ExportRow>["columns"]): LeafColumn[] {
@@ -37,6 +44,14 @@ function flattenColumns(columns: TableProps<ExportRow>["columns"]): LeafColumn[]
                 title: textFromReactNode(column.title),
                 width: typeof column.width === "number" ? column.width : undefined,
                 align: column.align as LeafColumn["align"],
+                onCell:
+                    typeof column.onCell === "function"
+                        ? (record) => column.onCell?.(record as never)
+                        : undefined,
+                onHeaderCell:
+                    typeof column.onHeaderCell === "function"
+                        ? () => column.onHeaderCell?.()
+                        : undefined,
                 render:
                     typeof column.render === "function"
                         ? (value, record, index) =>
@@ -71,16 +86,52 @@ function textFromReactNode(value: React.ReactNode): string {
     return "";
 }
 
-function getCellText(
+function textAndStyleFromReactNode(value: React.ReactNode): ExportCellData {
+    if (value === null || value === undefined || typeof value === "boolean") {
+        return { text: "" };
+    }
+    if (typeof value === "string" || typeof value === "number") {
+        return { text: String(value) };
+    }
+    if (Array.isArray(value)) {
+        return {
+            text: value.map((item) => textAndStyleFromReactNode(item).text).join(""),
+        };
+    }
+    if (React.isValidElement(value)) {
+        const props = value.props as {
+            children?: React.ReactNode;
+            style?: Record<string, unknown>;
+        };
+        const child = textAndStyleFromReactNode(props.children);
+        return {
+            text: child.text,
+            style: props.style ?? child.style,
+        };
+    }
+    return { text: "" };
+}
+
+function getCellData(
     column: LeafColumn,
     record: ExportRow,
     rowIndex: number,
-): string {
+): ExportCellData {
     const rawValue = record[column.key];
     if (column.render) {
-        return textFromReactNode(column.render(rawValue, record, rowIndex));
+        const rendered = column.render(rawValue, record, rowIndex);
+        const extracted = textAndStyleFromReactNode(rendered);
+        return {
+            text: extracted.text,
+            style:
+                extracted.style ??
+                column.onCell?.(record)?.style,
+        };
     }
-    return textFromReactNode(rawValue as React.ReactNode);
+    return {
+        text: textFromReactNode(rawValue as React.ReactNode),
+        style: column.onCell?.(record)?.style,
+    };
 }
 
 function mapExcelAlignment(
@@ -92,6 +143,40 @@ function mapExcelAlignment(
 
 function makeTimestampedReportFilename(extension: "pdf" | "xlsx") {
     return `${new Date().toISOString()}-report.${extension}`;
+}
+
+function normalizeHexColor(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)) {
+        if (trimmed.length === 4) {
+            return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+        }
+        return trimmed;
+    }
+    const match = trimmed.match(
+        /^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i,
+    );
+    if (!match) return undefined;
+    const [, r, g, b] = match;
+    return `#${[r, g, b]
+        .map((part) =>
+            Number(part).toString(16).padStart(2, "0"),
+        )
+        .join("")}`;
+}
+
+function hexToArgb(hex: string): string {
+    return `FF${hex.replace("#", "").toUpperCase()}`;
+}
+
+function hexToRgbTuple(hex: string): [number, number, number] {
+    const normalized = hex.replace("#", "");
+    return [
+        Number.parseInt(normalized.slice(0, 2), 16),
+        Number.parseInt(normalized.slice(2, 4), 16),
+        Number.parseInt(normalized.slice(4, 6), 16),
+    ];
 }
 
 export async function exportTrackerTableToExcel({
@@ -156,14 +241,17 @@ export async function exportTrackerTableToExcel({
     leafColumns.forEach((column, index) => {
         const cell = headerRow.getCell(index + 1);
         cell.value = column.title;
+        const headerStyle = column.onHeaderCell?.()?.style;
+        const headerBg = normalizeHexColor(headerStyle?.backgroundColor) ?? "#365F91";
+        const headerFg = normalizeHexColor(headerStyle?.color) ?? "#FFFFFF";
         cell.font = {
             bold: true,
-            color: { argb: "FFFFFFFF" },
+            color: { argb: hexToArgb(headerFg) },
         };
         cell.fill = {
             type: "pattern",
             pattern: "solid",
-            fgColor: { argb: "FF365F91" },
+            fgColor: { argb: hexToArgb(headerBg) },
         };
         cell.alignment = {
             horizontal: mapExcelAlignment(column.align),
@@ -177,8 +265,8 @@ export async function exportTrackerTableToExcel({
             right: { style: "thin" },
         };
         worksheet.getColumn(index + 1).width = Math.max(
-            14,
-            Math.min(42, Math.round((column.width ?? 140) / 7)),
+            12,
+            Math.min(60, Math.round((column.width ?? 160) / 7)),
         );
     });
     headerRow.height = 24;
@@ -187,7 +275,8 @@ export async function exportTrackerTableToExcel({
         const excelRow = worksheet.getRow(headerRowIndex + 1 + rowIndex);
         leafColumns.forEach((column, columnIndex) => {
             const cell = excelRow.getCell(columnIndex + 1);
-            cell.value = getCellText(column, record, rowIndex);
+            const exportCell = getCellData(column, record, rowIndex);
+            cell.value = exportCell.text;
             cell.alignment = {
                 horizontal: mapExcelAlignment(column.align),
                 vertical: "top",
@@ -199,6 +288,22 @@ export async function exportTrackerTableToExcel({
                 bottom: { style: "thin" },
                 right: { style: "thin" },
             };
+            const backgroundColor = normalizeHexColor(
+                exportCell.style?.backgroundColor,
+            );
+            const textColor = normalizeHexColor(exportCell.style?.color);
+            if (backgroundColor) {
+                cell.fill = {
+                    type: "pattern",
+                    pattern: "solid",
+                    fgColor: { argb: hexToArgb(backgroundColor) },
+                };
+            }
+            if (textColor) {
+                cell.font = {
+                    color: { argb: hexToArgb(textColor) },
+                };
+            }
         });
     });
 
@@ -227,7 +332,7 @@ export function exportTrackerTableToPdf({
 
     const doc = new jsPDF({ orientation: "landscape" });
     const body = rows.map((record, rowIndex) =>
-        leafColumns.map((column) => getCellText(column, record, rowIndex)),
+        leafColumns.map((column) => getCellData(column, record, rowIndex).text),
     );
 
     doc.setFontSize(14);
@@ -237,8 +342,8 @@ export function exportTrackerTableToPdf({
         doc.text(subtitle, 14, 21);
     }
 
-    const marginLeft = 14;
-    const marginRight = 14;
+    const marginLeft = 8;
+    const marginRight = 8;
     const availableWidth =
         doc.internal.pageSize.getWidth() - marginLeft - marginRight;
     const requestedWidths = leafColumns.map((column) =>
@@ -249,7 +354,7 @@ export function exportTrackerTableToPdf({
         0,
     );
     const widthRatio =
-        totalRequestedWidth > availableWidth
+        totalRequestedWidth > 0
             ? availableWidth / totalRequestedWidth
             : 1;
 
@@ -282,13 +387,47 @@ export function exportTrackerTableToPdf({
             valign: "top",
         },
         headStyles: {
-            fillColor: [54, 95, 145],
-            textColor: [255, 255, 255],
+            fillColor: [187, 209, 238],
+            textColor: [37, 54, 74],
             fontStyle: "bold",
             halign: "center",
             valign: "middle",
         },
         columnStyles,
+        didParseCell: (hookData) => {
+            if (hookData.section === "head") {
+                const headerStyle =
+                    leafColumns[hookData.column.index]?.onHeaderCell?.()?.style;
+                const backgroundColor = normalizeHexColor(
+                    headerStyle?.backgroundColor,
+                );
+                const textColor = normalizeHexColor(headerStyle?.color);
+                if (backgroundColor) {
+                    hookData.cell.styles.fillColor = hexToRgbTuple(backgroundColor);
+                }
+                if (textColor) {
+                    hookData.cell.styles.textColor = hexToRgbTuple(textColor);
+                }
+                return;
+            }
+
+            if (hookData.section === "body") {
+                const column = leafColumns[hookData.column.index];
+                const record = rows[hookData.row.index];
+                if (!column || !record) return;
+                const exportCell = getCellData(column, record, hookData.row.index);
+                const backgroundColor = normalizeHexColor(
+                    exportCell.style?.backgroundColor,
+                );
+                const textColor = normalizeHexColor(exportCell.style?.color);
+                if (backgroundColor) {
+                    hookData.cell.styles.fillColor = hexToRgbTuple(backgroundColor);
+                }
+                if (textColor) {
+                    hookData.cell.styles.textColor = hexToRgbTuple(textColor);
+                }
+            }
+        },
     });
 
     doc.save(makeTimestampedReportFilename("pdf"));

@@ -807,6 +807,44 @@ function Component() {
                 {
                     title: (
                         <Link
+                            to="/ndp/reporting-rates"
+                            search={(prev) => ({
+                                ...prev,
+                                ou,
+                                v,
+                                objective: undefined,
+                                deg: undefined,
+                                program: undefined,
+                                pe: undefined,
+                                requiresProgram: undefined,
+                                quarters: undefined,
+                                category: undefined,
+                                categoryOptions: undefined,
+                                nonBaseline: undefined,
+                            })}
+                            activeProps={{
+                                style: {
+                                    color: "white",
+                                },
+                            }}
+                            activeOptions={{
+                                exact: true,
+                                includeHash: false,
+                                includeSearch: false,
+                            }}
+                            style={{
+                                color: "#2B6998",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            Reporting Rates
+                        </Link>
+                    ),
+                    key: "/ndp/reporting-rates",
+                },
+                {
+                    title: (
+                        <Link
                             to="/ndp/workflows"
                             search={(prev) => ({
                                 ...prev,

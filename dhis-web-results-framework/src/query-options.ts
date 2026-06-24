@@ -1721,39 +1721,841 @@ export const ndpIndicatorsQueryOptions = (
     return queryOptions({
         queryKey: ["ndp-indicators", ndpVersion],
         queryFn: async () => {
-            try {
-                const doneCount = await db.dataElements
-                    .where({ fsIKncW1Eps: ndpVersion })
-                    .count();
-                if (doneCount === 0) {
-                    const {
-                        dataElements: { dataElements },
-                    } = (await engine.query({
-                        dataElements: {
-                            resource: `dataElements?filter=attributeValues.value:eq:${ndpVersion}&fields=id,name,code,aggregationType,description,attributeValues[value,attribute[id,name,code]],dataSetElements[dataSet[id,organisationUnits[path]]]&paging=false`,
-                        },
-                    })) as {
-                        dataElements: { dataElements: DataElement[] };
-                    };
+            const requiresRefresh = async () => {
+                const sample = await db.dataElements
+                    .where("fsIKncW1Eps")
+                    .equals(ndpVersion)
+                    .first();
+                if (!sample) return true;
+                return !(
+                    Array.isArray(sample.voteCodes) &&
+                    Array.isArray(sample.reportingCycles) &&
+                    typeof sample.valueType === "string" &&
+                    Array.isArray(sample.datasetAssignments) &&
+                    Array.isArray(sample.dataSetNames)
+                );
+            };
 
-                    const processed = processDataElements(dataElements);
-                    await db.dataElements.bulkPut(processed);
-                }
-            } catch (error) {
-                await Dexie.delete("ndp-rf");
+            const loadDataElements = async () => {
                 const {
                     dataElements: { dataElements },
                 } = (await engine.query({
                     dataElements: {
-                        resource: `dataElements?filter=attributeValues.value:eq:${ndpVersion}&fields=id,name,code,aggregationType,description,attributeValues[value,attribute[id,name,code]],dataSetElements[dataSet[id,organisationUnits[id]]]&paging=false`,
+                        resource: `dataElements?filter=attributeValues.value:eq:${ndpVersion}&fields=id,name,displayName,code,aggregationType,valueType,categoryCombo[id,name,displayName],description,attributeValues[value,attribute[id,name,code]],dataSetElements[dataSet[id,name,periodType,organisationUnits[code,displayName,id,path]]]&paging=false`,
                     },
                 })) as {
                     dataElements: { dataElements: DataElement[] };
                 };
                 const processed = processDataElements(dataElements);
+                await db.dataElements
+                    .where("fsIKncW1Eps")
+                    .equals(ndpVersion)
+                    .delete();
                 await db.dataElements.bulkPut(processed);
+            };
+
+            try {
+                const doneCount = await db.dataElements
+                    .where({ fsIKncW1Eps: ndpVersion })
+                    .count();
+                if (doneCount === 0 || (await requiresRefresh())) {
+                    await loadDataElements();
+                }
+            } catch (error) {
+                await Dexie.delete("ndp-rf");
+                await loadDataElements();
             }
             return "Done";
+        },
+    });
+};
+
+export type IndicatorDictionaryRow = {
+    key: string;
+    id: string;
+    displayName: string;
+    code: string;
+    aggregationType: string;
+    disaggregation: string;
+    valueType: string;
+    periodType: string;
+    vote: string;
+    completenessConfigured: number;
+    completenessTotal: number;
+    completenessRate: string;
+    completenessState: "green" | "yellow" | "red";
+    [key: string]: string | number;
+};
+
+export type IndicatorDictionaryTab = "ndpIndicators" | "classification";
+
+export type IndicatorDictionarySortField = "displayName" | "code";
+
+export type IndicatorDictionaryHeaderDefinition = {
+    id: string;
+    title: string;
+    defaultVisible: boolean;
+    width: number;
+    sortable?: boolean;
+    aliases?: string[];
+};
+
+export type IndicatorDictionaryPager = {
+    page: number;
+    pageCount: number;
+    pageSize: number;
+    total: number;
+};
+
+export type IndicatorClassificationOption = {
+    id: string;
+    code?: string;
+    name: string;
+};
+
+export type ReportingRatesDatasetOption = {
+    value: string;
+    label: string;
+    periodType?: string;
+    assignedOrgUnitCount: number;
+};
+
+export type ReportingRatesQuarterOption = {
+    value: string;
+    label: string;
+    financialYear: string;
+    quarter: "Q1" | "Q2" | "Q3" | "Q4";
+};
+
+export type ReportingRatesRow = {
+    key: string;
+    orgUnitId: string;
+    orgUnitName: string;
+    dataSetId: string;
+    dataSetName: string;
+    quarterLabel: string;
+    period: string;
+    expectedReports: number;
+    completedReports: number;
+    missingReports: number;
+    reportingRate: number;
+    reportingRateDisplay: string;
+    performanceBand: "green" | "yellow" | "red";
+};
+
+export const indicatorDictionaryHeaders: IndicatorDictionaryHeaderDefinition[] = [
+    {
+        id: "displayName",
+        title: "Name",
+        defaultVisible: true,
+        width: 520,
+        sortable: true,
+    },
+    {
+        id: "code",
+        title: "Indicator code",
+        defaultVisible: true,
+        width: 150,
+        sortable: true,
+    },
+    {
+        id: "aggregationType",
+        title: "Aggregation type",
+        defaultVisible: true,
+        width: 160,
+    },
+    {
+        id: "disaggregation",
+        title: "Disaggregation",
+        defaultVisible: true,
+        width: 160,
+    },
+    {
+        id: "valueType",
+        title: "Value type",
+        defaultVisible: true,
+        width: 120,
+    },
+    {
+        id: "periodType",
+        title: "Reporting cycle",
+        defaultVisible: true,
+        width: 140,
+    },
+    {
+        id: "vote",
+        title: "Vote",
+        defaultVisible: true,
+        width: 170,
+    },
+    {
+        id: "alternativeDataSource",
+        title: "Alternative data source",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Alternative data source", "alternativeDataSource"],
+    },
+    {
+        id: "measurement",
+        title: "Measurement",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Measurement", "Lxe84DpBHhm", "measurement"],
+    },
+    {
+        id: "descendingIndicatorType",
+        title: "descending indicator type",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "descending indicator type",
+            "Descending Indicator",
+            "descendingIndicatorType",
+        ],
+    },
+    {
+        id: "frequencyOfDataCollection",
+        title: "Frequency of data collection",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Frequency of data collection",
+            "M5nS9I96cCx",
+            "frequencyOfDataCollection",
+        ],
+    },
+    {
+        id: "dataSource",
+        title: "Data Source",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Data Source", "Prss6OhQvYg", "dataSource"],
+    },
+    {
+        id: "intermediateOutcome",
+        title: "Intermediate Outcome",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Intermediate Outcome",
+            "k9c6BOHIohu",
+            "intermediateOutcome",
+        ],
+    },
+    {
+        id: "keyResultAreas",
+        title: "Key Result Areas",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Key Result Areas", "Key Result Area", "JmZO4hoIlfT"],
+    },
+    {
+        id: "leadMda",
+        title: "Lead MDA",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Lead MDA", "leadMda"],
+    },
+    {
+        id: "limitations",
+        title: "Limitations",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Limitations", "limitations"],
+    },
+    {
+        id: "ndp",
+        title: "NDP",
+        defaultVisible: false,
+        width: 140,
+        aliases: ["NDP", "fsIKncW1Eps", "ndp"],
+    },
+    {
+        id: "ndpProgrammeList",
+        title: "NDP Programme List",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["NDP Programme List", "UBWSASWdyfi", "Programme"],
+    },
+    {
+        id: "otherMdas",
+        title: "Other MDAs",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Other MDAs", "otherMdas"],
+    },
+    {
+        id: "programGoal",
+        title: "Program Goal",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Program Goal", "Goal", "m3Be0z4xNnA", "programGoal"],
+    },
+    {
+        id: "programIntervention",
+        title: "Program Intervention",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Program Intervention",
+            "LKWITZXQD9l",
+            "programIntervention",
+        ],
+    },
+    {
+        id: "programObjective",
+        title: "Program Objective",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Program Objective", "GuoVDNEBAXA", "programObjective"],
+    },
+    {
+        id: "responsibilityForIndicator",
+        title: "Responsibility for reporting",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Responsibility for reporting",
+            "responsibilityForIndicator",
+            "lIRw10zARY7",
+        ],
+    },
+    {
+        id: "rationale",
+        title: "Rationale",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Rationale", "rationale"],
+    },
+    {
+        id: "strategicObjective",
+        title: "Strategic Objective",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Strategic Objective", "fwSdMAZ9egv", "strategicObjective"],
+    },
+    {
+        id: "unitOfMeasure",
+        title: "Unit of Measure",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Unit of Measure", "FuRWtF51PyL", "unit", "unitOfMeasure"],
+    },
+    {
+        id: "preferredDataSource",
+        title: "Preferred Data Source",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Preferred Data Source",
+            "preferredDataSource",
+            "Prss6OhQvYg",
+        ],
+    },
+    {
+        id: "accountabilityForIndicator",
+        title: "Accountability for Indicator",
+        defaultVisible: false,
+        width: 220,
+        aliases: [
+            "Accountability for Indicator",
+            "accountabilityForIndicator",
+        ],
+    },
+    {
+        id: "indicatorType",
+        title: "Indicator type",
+        defaultVisible: false,
+        width: 180,
+        aliases: ["Indicator type", "indicatorType", "aWsagpqErAq"],
+    },
+    {
+        id: "computationMethod",
+        title: "Computation Method",
+        defaultVisible: false,
+        width: 220,
+        aliases: ["Computation Method", "computationMethod"],
+    },
+];
+
+const indicatorDictionaryCompletenessRules = {
+    green: [
+        "displayName",
+        "code",
+        "periodType",
+        "computationMethod",
+        "indicatorType",
+        "preferredDataSource",
+        "rationale",
+        "responsibilityForIndicator",
+        "unitOfMeasure",
+    ],
+    yellow: [
+        "displayName",
+        "code",
+        "accountabilityForIndicator",
+        "computationMethod",
+        "preferredDataSource",
+        "unitOfMeasure",
+    ],
+};
+
+const dictionaryPlaceholder = "-";
+
+const hasMeaningfulDictionaryValue = (value: unknown) => {
+    if (value === undefined || value === null) return false;
+    if (typeof value === "number") return !Number.isNaN(value);
+    const normalized = String(value).trim();
+    if (normalized.length === 0) return false;
+    return normalized !== dictionaryPlaceholder;
+};
+
+const normalizeDictionaryScalar = (value: unknown): string => {
+    if (Array.isArray(value)) {
+        const joined = value
+            .map((item) => String(item ?? "").trim())
+            .filter((item) => item.length > 0)
+            .join(", ");
+        return joined.length > 0 ? joined : dictionaryPlaceholder;
+    }
+    if (value === undefined || value === null) {
+        return dictionaryPlaceholder;
+    }
+    const normalized = String(value).trim();
+    return normalized.length > 0 ? normalized : dictionaryPlaceholder;
+};
+
+const getDictionaryHeaderValue = (
+    dataElement: ReturnType<typeof processDataElements>[number],
+    header: IndicatorDictionaryHeaderDefinition,
+) => {
+    switch (header.id) {
+        case "displayName":
+            return dataElement.displayName ?? dataElement.name ?? "";
+        case "code":
+            return dataElement.code ?? "";
+        case "aggregationType":
+            return dataElement.aggregationType ?? "";
+        case "disaggregation":
+            return dataElement.disaggregation ?? "";
+        case "valueType":
+            return dataElement.valueType ?? "";
+        case "periodType":
+            return dataElement.reportingCycles ?? [];
+        case "vote":
+            return dataElement.voteCodes ?? [];
+        default:
+            for (const alias of header.aliases ?? []) {
+                const value = dataElement[alias];
+                if (hasMeaningfulDictionaryValue(value)) {
+                    return value;
+                }
+            }
+            return "";
+    }
+};
+
+const getDictionaryCompletenessState = (
+    row: Record<string, string>,
+): "green" | "yellow" | "red" => {
+    const matchesRule = (fields: string[]) =>
+        fields.every((field) => hasMeaningfulDictionaryValue(row[field]));
+    if (matchesRule(indicatorDictionaryCompletenessRules.green)) {
+        return "green";
+    }
+    if (matchesRule(indicatorDictionaryCompletenessRules.yellow)) {
+        return "yellow";
+    }
+    return "red";
+};
+
+const mapIndicatorDictionaryRow = (
+    dataElement: ReturnType<typeof processDataElements>[number],
+): IndicatorDictionaryRow => {
+    const values = Object.fromEntries(
+        indicatorDictionaryHeaders.map((header) => [
+            header.id,
+            normalizeDictionaryScalar(getDictionaryHeaderValue(dataElement, header)),
+        ]),
+    ) as Record<string, string>;
+    const completenessConfigured = indicatorDictionaryHeaders.filter((header) =>
+        hasMeaningfulDictionaryValue(values[header.id]),
+    ).length;
+    const completenessTotal = indicatorDictionaryHeaders.length;
+
+    return {
+        key: dataElement.id,
+        id: dataElement.id,
+        ...values,
+        aggregationType: values.aggregationType,
+        code: values.code,
+        completenessConfigured,
+        completenessRate: `(${completenessConfigured} / ${completenessTotal})`,
+        completenessState: getDictionaryCompletenessState(values),
+        completenessTotal,
+        disaggregation: values.disaggregation,
+        displayName: values.displayName,
+        periodType: values.periodType,
+        valueType: values.valueType,
+        vote: values.vote,
+    };
+};
+
+export const indicatorDictionaryQueryOptions = ({
+    engine,
+    ndpVersion,
+    tab = "ndpIndicators",
+    searchText,
+    page = 1,
+    pageSize = 50,
+    sortField = "displayName",
+    sortOrder = "ascend",
+    classificationId,
+    fetchAll = false,
+}: {
+    engine: ReturnType<typeof useDataEngine>;
+    ndpVersion: string;
+    tab?: IndicatorDictionaryTab;
+    searchText?: string;
+    page?: number;
+    pageSize?: number;
+    sortField?: IndicatorDictionarySortField;
+    sortOrder?: "ascend" | "descend";
+    classificationId?: string;
+    fetchAll?: boolean;
+}) => {
+    return queryOptions({
+        queryKey: [
+            "indicator-dictionary",
+            ndpVersion,
+            tab,
+            searchText?.trim().toLowerCase() ?? "",
+            page,
+            pageSize,
+            sortField,
+            sortOrder,
+            classificationId ?? "",
+            fetchAll,
+        ],
+        queryFn: async () => {
+            const normalizedSearch = searchText?.trim().toLowerCase() ?? "";
+            const params = new URLSearchParams({
+                fields: [
+                    "id",
+                    "name",
+                    "displayName",
+                    "code",
+                    "aggregationType",
+                    "valueType",
+                    "categoryCombo[id,name,displayName]",
+                    "description",
+                    "attributeValues[value,attribute[id,name,code]]",
+                    "dataElementGroups[id,name,code,groupSets[id,name,code]]",
+                    "dataSetElements[dataSet[id,name,periodType,organisationUnits[code,displayName,id,path]]]",
+                ].join(","),
+                order: `${sortField}:${sortOrder === "descend" ? "desc" : "asc"}`,
+                paging: fetchAll ? "false" : "true",
+            });
+
+            params.append("filter", `attributeValues.value:eq:${ndpVersion}`);
+
+            if (tab === "classification" && classificationId) {
+                params.append("filter", `dataElementGroups.id:eq:${classificationId}`);
+            }
+
+            if (normalizedSearch) {
+                params.set("query", normalizedSearch);
+            }
+
+            if (!fetchAll) {
+                params.set("page", String(page));
+                params.set("pageSize", String(pageSize));
+                params.set("totalPages", "true");
+            }
+
+            const response = (await engine.query({
+                dataElements: {
+                    resource: `dataElements?${params.toString()}`,
+                },
+            })) as {
+                dataElements: {
+                    dataElements: DataElement[];
+                    pager?: IndicatorDictionaryPager;
+                };
+            };
+
+            const rows = uniqBy(
+                processDataElements(response.dataElements.dataElements ?? []),
+                "id",
+            ).map(mapIndicatorDictionaryRow);
+            const total = fetchAll
+                ? rows.length
+                : response.dataElements.pager?.total ?? rows.length;
+            return {
+                pager: {
+                    page: fetchAll ? 1 : response.dataElements.pager?.page ?? page,
+                    pageCount: fetchAll
+                        ? Math.max(1, Math.ceil(total / Math.max(pageSize, 1)))
+                        : Math.max(
+                              1,
+                              response.dataElements.pager?.pageCount ??
+                                  Math.ceil(total / Math.max(pageSize, 1)),
+                          ),
+                    pageSize: fetchAll
+                        ? total || pageSize
+                        : response.dataElements.pager?.pageSize ?? pageSize,
+                    total,
+                } satisfies IndicatorDictionaryPager,
+                rows,
+            };
+        },
+    });
+};
+
+export const indicatorDictionaryClassificationQueryOptions = ({
+    engine,
+    groupSetId,
+}: {
+    engine: ReturnType<typeof useDataEngine>;
+    groupSetId?: string;
+}) => {
+    return queryOptions({
+        queryKey: ["indicator-dictionary-classifications", groupSetId ?? ""],
+        queryFn: async () => {
+            if (!groupSetId) {
+                return [];
+            }
+            const response = (await engine.query({
+                dataElementGroupSet: {
+                    resource: `dataElementGroupSets/${groupSetId}`,
+                    params: {
+                        fields: "id,name,dataElementGroups[id,name,code]",
+                    },
+                },
+            })) as {
+                dataElementGroupSet: {
+                    dataElementGroups?: IndicatorClassificationOption[];
+                };
+            };
+            return response.dataElementGroupSet.dataElementGroups ?? [];
+        },
+    });
+};
+
+export const reportingRatesDatasetOptionsQueryOptions = (
+    ndpVersion: string,
+) => {
+    return queryOptions({
+        queryKey: ["reporting-rates-datasets", ndpVersion],
+        queryFn: async () => {
+            const dataElements = await db.dataElements
+                .where("fsIKncW1Eps")
+                .equals(ndpVersion)
+                .toArray();
+
+            const datasetMap = new Map<string, ReportingRatesDatasetOption>();
+            const datasetOrgUnits = new Map<string, Set<string>>();
+
+            uniqBy(dataElements, "id").forEach((dataElement) => {
+                const assignments = Array.isArray(dataElement.datasetAssignments)
+                    ? dataElement.datasetAssignments
+                    : [];
+                assignments.forEach((assignment) => {
+                    const dataSetId = String(assignment.dataSetId ?? "").trim();
+                    if (!dataSetId) {
+                        return;
+                    }
+                    const orgUnits = datasetOrgUnits.get(dataSetId) ?? new Set<string>();
+                    orgUnits.add(String(assignment.orgUnitId ?? ""));
+                    datasetOrgUnits.set(dataSetId, orgUnits);
+                    const existing = datasetMap.get(dataSetId);
+                    datasetMap.set(dataSetId, {
+                        value: dataSetId,
+                        label: String(
+                            assignment.dataSetName ?? existing?.label ?? dataSetId,
+                        ),
+                        periodType: String(
+                            assignment.periodType ?? existing?.periodType ?? "",
+                        ),
+                        assignedOrgUnitCount: orgUnits.size,
+                    });
+                });
+            });
+
+            return orderBy(
+                Array.from(datasetMap.values()),
+                ["label"],
+                ["asc"],
+            );
+        },
+    });
+};
+
+export const reportingRatesQueryOptions = ({
+    engine,
+    ndpVersion,
+    dataSetId,
+    orgUnitId,
+    quarter,
+}: {
+    engine: ReturnType<typeof useDataEngine>;
+    ndpVersion: string;
+    dataSetId?: string;
+    orgUnitId?: string;
+    quarter?: ReportingRatesQuarterOption;
+}) => {
+    return queryOptions({
+        queryKey: [
+            "reporting-rates",
+            ndpVersion,
+            dataSetId ?? "",
+            orgUnitId ?? "",
+            quarter?.value ?? "",
+        ],
+        queryFn: async () => {
+            if (!dataSetId || !orgUnitId || !quarter) {
+                return [];
+            }
+
+            const dataElements = await db.dataElements
+                .where("fsIKncW1Eps")
+                .equals(ndpVersion)
+                .toArray();
+            const rootResponse = (await engine.query({
+                organisationUnit: {
+                    resource: `organisationUnits/${orgUnitId}`,
+                    params: {
+                        fields: "id,name,displayName,path",
+                    },
+                },
+            })) as {
+                organisationUnit: {
+                    id: string;
+                    name: string;
+                    displayName?: string;
+                    path?: string;
+                };
+            };
+            const rootPath = rootResponse.organisationUnit.path ?? `/${orgUnitId}`;
+
+            const expectedOrgUnits = new Map<
+                string,
+                { orgUnitId: string; orgUnitName: string; path: string }
+            >();
+            let dataSetName = dataSetId;
+
+            uniqBy(dataElements, "id").forEach((dataElement) => {
+                const assignments = Array.isArray(dataElement.datasetAssignments)
+                    ? dataElement.datasetAssignments
+                    : [];
+                assignments.forEach((assignment) => {
+                    if (String(assignment.dataSetId ?? "") !== dataSetId) {
+                        return;
+                    }
+                    dataSetName = String(
+                        assignment.dataSetName ?? dataSetName ?? dataSetId,
+                    );
+                    const path = String(assignment.path ?? "");
+                    const assignmentOrgUnitId = String(assignment.orgUnitId ?? "");
+                    if (
+                        !assignmentOrgUnitId ||
+                        !path ||
+                        !path.startsWith(rootPath)
+                    ) {
+                        return;
+                    }
+                    expectedOrgUnits.set(assignmentOrgUnitId, {
+                        orgUnitId: assignmentOrgUnitId,
+                        orgUnitName: String(
+                            assignment.orgUnitName ??
+                                assignment.orgUnitCode ??
+                                assignmentOrgUnitId,
+                        ),
+                        path,
+                    });
+                });
+            });
+
+            const registrationsResponse = (await engine.query({
+                completeDataSetRegistrations: {
+                    resource: "completeDataSetRegistrations",
+                    params: {
+                        dataSet: dataSetId,
+                        period: quarter.value,
+                        orgUnit: orgUnitId,
+                        children: true,
+                        paging: false,
+                        fields: "organisationUnit[id],dataSet[id],period",
+                    },
+                },
+            })) as {
+                completeDataSetRegistrations: {
+                    completeDataSetRegistrations?: Array<{
+                        organisationUnit?:
+                            | {
+                                  id?: string;
+                              }
+                            | string;
+                    }>;
+                };
+            };
+
+            const completedCounts = new Map<string, number>();
+            (
+                registrationsResponse.completeDataSetRegistrations
+                    .completeDataSetRegistrations ?? []
+            ).forEach((registration) => {
+                const organisationUnit =
+                    typeof registration.organisationUnit === "string"
+                        ? registration.organisationUnit
+                        : registration.organisationUnit?.id;
+                const registrationOrgUnitId = String(organisationUnit ?? "");
+                if (!expectedOrgUnits.has(registrationOrgUnitId)) {
+                    return;
+                }
+                completedCounts.set(
+                    registrationOrgUnitId,
+                    (completedCounts.get(registrationOrgUnitId) ?? 0) + 1,
+                );
+            });
+
+            return orderBy(
+                Array.from(expectedOrgUnits.values()).map((orgUnit) => {
+                    const completedReports =
+                        completedCounts.get(orgUnit.orgUnitId) ?? 0;
+                    const expectedReports = 1;
+                    const missingReports = Math.max(
+                        expectedReports - completedReports,
+                        0,
+                    );
+                    const reportingRate =
+                        expectedReports === 0
+                            ? 0
+                            : (completedReports / expectedReports) * 100;
+                    return {
+                        key: `${dataSetId}-${quarter.value}-${orgUnit.orgUnitId}`,
+                        orgUnitId: orgUnit.orgUnitId,
+                        orgUnitName: orgUnit.orgUnitName,
+                        dataSetId,
+                        dataSetName,
+                        quarterLabel: quarter.label,
+                        period: quarter.value,
+                        expectedReports,
+                        completedReports,
+                        missingReports,
+                        reportingRate,
+                        reportingRateDisplay: reportingRate.toFixed(2),
+                        performanceBand:
+                            reportingRate >= 100
+                                ? "green"
+                                : reportingRate >= 75
+                                  ? "yellow"
+                                  : "red",
+                    } satisfies ReportingRatesRow;
+                }),
+                ["orgUnitName"],
+                ["asc"],
+            );
         },
     });
 };

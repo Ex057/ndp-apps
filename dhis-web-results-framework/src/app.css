@@ -19,12 +19,33 @@
 	width: 100%;
 }
 
+.indicator-dictionary-page {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: calc(100vh - 148px);
+	width: 100%;
+}
+
+.reporting-rates-page {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: calc(100vh - 148px);
+	width: 100%;
+}
+
 .policy-actions-controls-row {
 	flex: 0 0 auto;
 }
 
 .project-performance-controls-row {
 	flex: 0 0 auto;
+}
+
+.indicator-dictionary-controls-row {
+	flex: 0 0 auto;
+	align-items: stretch;
 }
 
 .policy-actions-control-col {
@@ -35,11 +56,21 @@
 	display: flex;
 }
 
+.indicator-dictionary-control-col {
+	display: flex;
+	flex: 1 1 0;
+	min-width: 0;
+}
+
 .policy-actions-control-card {
 	width: 100%;
 }
 
 .project-performance-control-card {
+	width: 100%;
+}
+
+.indicator-dictionary-control-card {
 	width: 100%;
 }
 
@@ -76,6 +107,14 @@
 }
 
 .project-performance-report-panel {
+	flex: 1 1 auto;
+}
+
+.indicator-dictionary-report-panel {
+	flex: 1 1 auto;
+}
+
+.reporting-rates-report-panel {
 	flex: 1 1 auto;
 }
 
@@ -133,6 +172,12 @@
 	height: 100%;
 }
 
+.reporting-rates-table-region .ant-table-wrapper,
+.reporting-rates-table-region .ant-spin-nested-loading,
+.reporting-rates-table-region .ant-spin-container {
+	height: 100%;
+}
+
 .policy-actions-footer {
 	flex: 0 0 auto;
 }
@@ -141,12 +186,32 @@
 	flex: 0 0 auto;
 }
 
+.indicator-dictionary-footer {
+	flex: 0 0 auto;
+	margin-top: auto;
+}
+
+.reporting-rates-footer {
+	flex: 0 0 auto;
+	margin-top: auto;
+}
+
 .policy-actions-table .ant-table {
 	border-radius: 0;
 	width: 100%;
 }
 
 .project-performance-table .ant-table {
+	border-radius: 0;
+	width: 100%;
+}
+
+.indicator-dictionary-table .ant-table {
+	border-radius: 0;
+	width: 100%;
+}
+
+.reporting-rates-table .ant-table {
 	border-radius: 0;
 	width: 100%;
 }
@@ -163,6 +228,31 @@
 	border-radius: 0 !important;
 }
 
+.indicator-dictionary-table .ant-table-container,
+.indicator-dictionary-table .ant-table-content,
+.indicator-dictionary-table table {
+	border-radius: 0 !important;
+}
+
+.reporting-rates-table .ant-table-container,
+.reporting-rates-table .ant-table-content,
+.reporting-rates-table table {
+	border-radius: 0 !important;
+}
+
+.indicator-dictionary-table .ant-table-thead > tr > th {
+	background: #bbd1ee !important;
+	color: #25364a;
+	font-size: 15px !important;
+	font-weight: 700;
+	line-height: 1.25;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: middle;
+}
+
 .policy-actions-table .ant-table-thead > tr > th {
 	background: #bbd1ee !important;
 	color: #25364a;
@@ -177,6 +267,19 @@
 }
 
 .project-performance-table .ant-table-thead > tr > th {
+	background: #bbd1ee !important;
+	color: #25364a;
+	font-size: 15px !important;
+	font-weight: 700;
+	line-height: 1.25;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: middle;
+}
+
+.reporting-rates-table .ant-table-thead > tr > th {
 	background: #bbd1ee !important;
 	color: #25364a;
 	font-size: 15px !important;
@@ -213,6 +316,30 @@
 	vertical-align: top;
 }
 
+.indicator-dictionary-table .ant-table-tbody > tr > td {
+	color: #333333;
+	font-size: 15px !important;
+	font-weight: 400;
+	line-height: 1.4;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: top;
+}
+
+.reporting-rates-table .ant-table-tbody > tr > td {
+	color: #333333;
+	font-size: 15px !important;
+	font-weight: 400;
+	line-height: 1.4;
+	padding: 6px 8px !important;
+	white-space: normal !important;
+	word-break: normal;
+	overflow-wrap: anywhere;
+	vertical-align: top;
+}
+
 .policy-actions-table .ant-table-tbody > tr > td > div {
 	margin: -6px -8px;
 	padding: 6px 8px;
@@ -223,11 +350,29 @@
 	padding: 6px 8px;
 }
 
+.indicator-dictionary-table .ant-table-tbody > tr > td > div {
+	margin: -6px -8px;
+	padding: 6px 8px;
+}
+
+.reporting-rates-table .ant-table-tbody > tr > td > div {
+	margin: -6px -8px;
+	padding: 6px 8px;
+}
+
 .policy-actions-table .ant-table-tbody > tr > td > div:not([style*="background-color"]) {
 	font-weight: 400;
 }
 
 .project-performance-table .ant-table-tbody > tr > td > div:not([style*="background-color"]) {
+	font-weight: 400;
+}
+
+.indicator-dictionary-table .ant-table-tbody > tr > td > div:not([style*="background-color"]) {
+	font-weight: 400;
+}
+
+.reporting-rates-table .ant-table-tbody > tr > td > div:not([style*="background-color"]) {
 	font-weight: 400;
 }
 
@@ -243,6 +388,18 @@
 	min-height: 24px;
 }
 
+.indicator-dictionary-table .ant-table-tbody > tr > td:empty::after {
+	content: "";
+	display: block;
+	min-height: 24px;
+}
+
+.reporting-rates-table .ant-table-tbody > tr > td:empty::after {
+	content: "";
+	display: block;
+	min-height: 24px;
+}
+
 .policy-actions-table .ant-table-cell {
 	border-color: #cad5e5 !important;
 }
@@ -251,11 +408,27 @@
 	border-color: #cad5e5 !important;
 }
 
+.indicator-dictionary-table .ant-table-cell {
+	border-color: #cad5e5 !important;
+}
+
+.reporting-rates-table .ant-table-cell {
+	border-color: #cad5e5 !important;
+}
+
 .policy-actions-table .ant-table-tbody > tr:hover > td {
 	background: #f7fbff !important;
 }
 
+.indicator-dictionary-table .ant-table-tbody > tr:hover > td {
+	background: inherit !important;
+}
+
 .project-performance-table .ant-table-tbody > tr:hover > td {
+	background: #f7fbff !important;
+}
+
+.reporting-rates-table .ant-table-tbody > tr:hover > td {
 	background: #f7fbff !important;
 }
 
@@ -284,6 +457,14 @@
 		min-height: auto;
 	}
 
+	.indicator-dictionary-page {
+		min-height: auto;
+	}
+
+	.reporting-rates-page {
+		min-height: auto;
+	}
+
 	.policy-actions-filter-row {
 		flex-direction: column;
 		align-items: stretch;
@@ -309,6 +490,17 @@
 	.project-performance-empty-state {
 		min-height: 320px;
 	}
+}
+
+.reporting-rates-empty-state {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 1 1 auto;
+	min-height: calc(100vh - 260px);
+	background: #fff;
+	border-radius: 4px;
+	box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 /* File Icon Tabs Styling */

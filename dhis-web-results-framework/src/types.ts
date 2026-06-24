@@ -200,7 +200,14 @@ export type DataElementGroupSet = NameWithAttribute & {
 };
 
 export type DataElement = NameWithAttribute & {
+    displayName?: string;
     code: string;
+    valueType: string;
+    categoryCombo?: {
+        id: string;
+        name: string;
+        displayName?: string;
+    };
     dataElementGroups: Array<
         NameWithAttribute & {
             groupSets: NameWithAttribute[];
