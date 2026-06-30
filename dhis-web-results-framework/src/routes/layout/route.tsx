@@ -515,6 +515,35 @@ function Component() {
                         {
                             title: (
                                 <Link
+                                    to="/ndp/reporting-rates"
+                                    search={() => ({
+                                        ou: votes[0].id,
+                                        v,
+                                        pe: currentFinancialYear,
+                                    })}
+                                    activeProps={{
+                                        style: {
+                                            color: "white",
+                                        },
+                                    }}
+                                    activeOptions={{
+                                        exact: true,
+                                        includeHash: false,
+                                        includeSearch: false,
+                                    }}
+                                    style={{
+                                        color: "#2B6998",
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    Reporting Rate Summaries
+                                </Link>
+                            ),
+                            key: "/ndp/reporting-rates",
+                        },
+                        {
+                            title: (
+                                <Link
                                     to="/ndp/vote-flash-report"
                                     search={() => ({
                                         ou: votes[0].id,
@@ -803,44 +832,6 @@ function Component() {
                     ),
                     key: "/ndp/indicator-dictionaries",
                     // to: "/ndp/indicator-dictionaries",
-                },
-                {
-                    title: (
-                        <Link
-                            to="/ndp/reporting-rates"
-                            search={(prev) => ({
-                                ...prev,
-                                ou,
-                                v,
-                                objective: undefined,
-                                deg: undefined,
-                                program: undefined,
-                                pe: undefined,
-                                requiresProgram: undefined,
-                                quarters: undefined,
-                                category: undefined,
-                                categoryOptions: undefined,
-                                nonBaseline: undefined,
-                            })}
-                            activeProps={{
-                                style: {
-                                    color: "white",
-                                },
-                            }}
-                            activeOptions={{
-                                exact: true,
-                                includeHash: false,
-                                includeSearch: false,
-                            }}
-                            style={{
-                                color: "#2B6998",
-                                whiteSpace: "nowrap",
-                            }}
-                        >
-                            Reporting Rates
-                        </Link>
-                    ),
-                    key: "/ndp/reporting-rates",
                 },
                 {
                     title: (

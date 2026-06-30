@@ -176,6 +176,7 @@
 .reporting-rates-table-region .ant-spin-nested-loading,
 .reporting-rates-table-region .ant-spin-container {
 	height: 100%;
+	min-width: 0;
 }
 
 .policy-actions-footer {
@@ -214,6 +215,15 @@
 .reporting-rates-table .ant-table {
 	border-radius: 0;
 	width: 100%;
+	--ant-table-row-hover-bg: transparent;
+	--ant-table-row-selected-bg: transparent;
+	--ant-table-row-selected-hover-bg: transparent;
+}
+
+.reporting-rates-expanded-table .ant-table {
+	--ant-table-row-hover-bg: transparent;
+	--ant-table-row-selected-bg: transparent;
+	--ant-table-row-selected-hover-bg: transparent;
 }
 
 .policy-actions-table .ant-table-container,
@@ -238,6 +248,25 @@
 .reporting-rates-table .ant-table-content,
 .reporting-rates-table table {
 	border-radius: 0 !important;
+}
+
+.reporting-rates-table-region {
+	min-width: 0;
+	overflow: auto;
+}
+
+.reporting-rates-table .ant-table-content,
+.reporting-rates-expanded-table .ant-table-content {
+	overflow-x: auto !important;
+}
+
+.reporting-rates-expanded-table {
+	min-width: 760px;
+}
+
+.reporting-rates-expanded-table .ant-table {
+	width: max-content;
+	min-width: 100%;
 }
 
 .indicator-dictionary-table .ant-table-thead > tr > th {
@@ -428,8 +457,19 @@
 	background: #f7fbff !important;
 }
 
-.reporting-rates-table .ant-table-tbody > tr:hover > td {
-	background: #f7fbff !important;
+.reporting-rates-table .ant-table-tbody > tr:hover > td:not([style*="background-color"]),
+.reporting-rates-table .ant-table-tbody > tr.ant-table-row:hover > td:not([style*="background-color"]),
+.reporting-rates-table .ant-table-tbody > tr.ant-table-row-selected > td:not([style*="background-color"]),
+.reporting-rates-table .ant-table-tbody > tr.ant-table-row-selected:hover > td:not([style*="background-color"]),
+.reporting-rates-table .ant-table-tbody > tr > td.ant-table-cell-row-hover:not([style*="background-color"]),
+.reporting-rates-table .ant-table-expanded-row:hover > td:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-tbody > tr:hover > td:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-tbody > tr.ant-table-row:hover > td:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-tbody > tr.ant-table-row-selected > td:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-tbody > tr.ant-table-row-selected:hover > td:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-tbody > tr > td.ant-table-cell-row-hover:not([style*="background-color"]),
+.reporting-rates-expanded-table .ant-table-expanded-row:hover > td:not([style*="background-color"]) {
+	background: #ffffff !important;
 }
 
 .policy-actions-table .ant-table-cell-fix-left {

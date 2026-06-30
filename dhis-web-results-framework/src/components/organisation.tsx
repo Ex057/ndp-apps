@@ -29,6 +29,7 @@ export function OrgUnitSelect({
     const { ou: defaultOrgUnit } = RootRoute.useLoaderData();
     const queryClient = useQueryClient();
     const organisationUnits = useLiveQuery(() => db.dataViewOrgUnits.toArray());
+    const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
 
     React.useEffect(() => {
         if (!defaultOrgUnit) return;
@@ -42,11 +43,29 @@ export function OrgUnitSelect({
             organisationUnits?.filter((orgUnit) => !orgUnit.pId) ?? [];
         if (rootOrgUnits.length === 0) return;
 
-        void Promise.all(
-            rootOrgUnits.map(({ id }) =>
-                queryClient.ensureQueryData(orgUnitQueryOptions(id, engine)),
-            ),
-        );
+        let isCancelled = false;
+
+        const hydrateBranch = async (orgUnitId: string): Promise<void> => {
+            await queryClient.ensureQueryData(orgUnitQueryOptions(orgUnitId, engine));
+            const children =
+                (await db.dataViewOrgUnits
+                    .where("pId")
+                    .equals(orgUnitId)
+                    .toArray()) ?? [];
+
+            for (const child of children) {
+                if (isCancelled || child.isLeaf) {
+                    continue;
+                }
+                await hydrateBranch(child.id);
+            }
+        };
+
+        void Promise.all(rootOrgUnits.map(({ id }) => hydrateBranch(id)));
+
+        return () => {
+            isCancelled = true;
+        };
     }, [engine, organisationUnits, queryClient]);
 
     const onLoadData: TreeSelectProps["loadData"] = async ({ value }) => {
@@ -102,21 +121,19 @@ export function OrgUnitSelect({
         setSearchValue(value);
     };
 
-    const expandedKeys = useMemo(
-        () =>
-            Array.from(
-                new Set(
-                    (organisationUnits ?? [])
-                        .filter((orgUnit) =>
-                            (organisationUnits ?? []).some(
-                                (child) => child.pId === orgUnit.id,
-                            ),
-                        )
-                        .map((orgUnit) => orgUnit.id),
-                ),
+    const autoExpandedKeys = useMemo(() => {
+        if (!searchValue.trim()) {
+            return expandedKeys;
+        }
+
+        return Array.from(
+            new Set(
+                (filteredTreeData ?? [])
+                    .map((orgUnit) => orgUnit.pId)
+                    .filter((key): key is string => Boolean(key)),
             ),
-        [organisationUnits],
-    );
+        );
+    }, [expandedKeys, filteredTreeData, searchValue]);
 
     const select = (
         <TreeSelect
@@ -130,10 +147,12 @@ export function OrgUnitSelect({
             onChange={onChange}
             loadData={onLoadData}
             treeData={orderBy(filteredTreeData, "title", "asc")}
-            treeExpandedKeys={expandedKeys}
+            treeExpandedKeys={autoExpandedKeys}
+            onTreeExpand={(keys) => setExpandedKeys(keys)}
             multiple={isMulti}
             filterTreeNode={false}
             onSearch={handleSearch}
+            treeDefaultExpandAll={Boolean(searchValue.trim())}
         />
     );
 

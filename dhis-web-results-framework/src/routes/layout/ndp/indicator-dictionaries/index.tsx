@@ -1,4 +1,10 @@
-import { DownloadOutlined, TableOutlined } from "@ant-design/icons";
+import {
+    CloseCircleOutlined,
+    DownloadOutlined,
+    MinusSquareOutlined,
+    PlusSquareOutlined,
+    TableOutlined,
+} from "@ant-design/icons";
 import { createRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { orderBy, uniqBy } from "lodash";
@@ -8,6 +14,7 @@ import {
     Card,
     Checkbox,
     Col,
+    Collapse,
     Dropdown,
     Empty,
     Input,
@@ -15,6 +22,7 @@ import {
     Modal,
     Row,
     Select,
+    Space,
     Table,
     Typography,
 } from "antd";
@@ -42,42 +50,36 @@ const summaryCardDefinitions = [
         title: "Total",
         color: "#d8e8ff",
         textColor: "#1f4b8f",
-        aliases: ["id"],
     },
     {
         key: "goal",
         title: "Goal",
         color: "#d8f0dd",
         textColor: "#1f6f43",
-        aliases: ["programGoal", "m3Be0z4xNnA", "Goal"],
-    },
-    {
-        key: "intermediate-outcome",
-        title: "Intermediate Outcome",
-        color: "#f8ebc2",
-        textColor: "#8c6d1f",
-        aliases: ["intermediateOutcome", "k9c6BOHIohu", "Intermediate Outcome"],
     },
     {
         key: "strategic-objective",
         title: "Strategic Objective",
         color: "#f6d4d0",
         textColor: "#9d2d22",
-        aliases: ["strategicObjective", "fwSdMAZ9egv", "Strategic Objective"],
     },
     {
         key: "outcome",
         title: "Outcome",
         color: "#d7f1ef",
         textColor: "#16656b",
-        aliases: ["rcESKgz4zKM", "Outcome", "programOutcome"],
+    },
+    {
+        key: "intermediate-outcome",
+        title: "Intermediate Outcome",
+        color: "#f8ebc2",
+        textColor: "#8c6d1f",
     },
     {
         key: "output",
         title: "Output",
         color: "#ece1ff",
         textColor: "#5b3f93",
-        aliases: ["jiBHfTa5VzB", "Output", "programOutput"],
     },
 ] as const;
 
@@ -106,6 +108,7 @@ function Component() {
     >();
     const [reportPanelHeight, setReportPanelHeight] = useState<number>();
     const [tableScrollY, setTableScrollY] = useState(420);
+    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
     const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(
         indicatorDictionaryHeaders
             .filter((header) => header.defaultVisible)
@@ -336,21 +339,28 @@ function Component() {
         }));
     }, [selectedRow]);
 
-    const summaryCards = useMemo(
-        () =>
-            summaryCardDefinitions.map((definition) => ({
-                ...definition,
-                value:
-                    definition.key === "total"
-                        ? filteredIndicators.length
-                        : filteredIndicators.filter((indicator) =>
-                              definition.aliases.some((alias) =>
-                                  hasMeaningfulValue(indicator[alias]),
-                              ),
-                          ).length,
-            })),
-        [filteredIndicators],
-    );
+    const summaryCards = useMemo(() => {
+        const counts = filteredIndicators.reduce<Record<string, number>>(
+            (accumulator, indicator) => {
+                const bucket = classifyIndicatorBucket(
+                    indicator.BmUMiIbD5XY,
+                );
+                if (bucket) {
+                    accumulator[bucket] = (accumulator[bucket] ?? 0) + 1;
+                }
+                return accumulator;
+            },
+            {},
+        );
+
+        return summaryCardDefinitions.map((definition) => ({
+            ...definition,
+            value:
+                definition.key === "total"
+                    ? filteredIndicators.length
+                    : (counts[definition.key] ?? 0),
+        }));
+    }, [filteredIndicators]);
 
     const handleTableChange: TableProps<IndicatorDictionaryRow>["onChange"] = (
         _pagination,
@@ -420,6 +430,10 @@ function Component() {
         },
     ];
 
+    const handleMdaClear = () => {
+        setSelectedMDA(undefined);
+    };
+
     return (
         <div className="indicator-dictionary-page">
             <div
@@ -437,6 +451,128 @@ function Component() {
                     height: reportPanelHeight,
                 }}
             >
+                <Row gutter={[16, 16]} align="stretch" style={{ marginBottom: "12px" }}>
+                    <Col xs={24} md={14}>
+                        <Card
+                            size="small"
+                            style={{
+                                backgroundColor: "#d0ebd0",
+                                borderColor: "#a4d2a3",
+                                width: "100%",
+                                height: "100%",
+                                borderRadius: "3px",
+                            }}
+                            styles={{
+                                body: {
+                                    padding: "12px",
+                                    height: "100%",
+                                    display: "flex",
+                                    alignItems: "flex-start",
+                                },
+                            }}
+                        >
+                            <Row align="middle" gutter={[12, 12]} style={{ width: "100%" }}>
+                                <Col xs={24} sm={5}>
+                                    <Text strong style={{ fontSize: "14px" }}>
+                                        Programme
+                                    </Text>
+                                </Col>
+                                <Col xs={24} sm={19}>
+                                    <Select
+                                        allowClear
+                                        placeholder="Select programme"
+                                        value={selectedProgramme}
+                                        options={programmeOptions}
+                                        style={{ width: "100%" }}
+                                        onChange={(value) => setSelectedProgramme(value)}
+                                    />
+                                </Col>
+                            </Row>
+                        </Card>
+                    </Col>
+                    <Col xs={24} md={10}>
+                        <Card
+                            size="small"
+                            style={{
+                                backgroundColor: "#bbd1ee",
+                                borderColor: "#729fcf",
+                                height: "100%",
+                                width: "100%",
+                                borderRadius: "3px",
+                            }}
+                            styles={{ body: { padding: "12px", height: "100%" } }}
+                        >
+                            <Collapse
+                                bordered={false}
+                                activeKey={isAdvancedFiltersOpen ? ["filters"] : []}
+                                onChange={(keys) =>
+                                    setIsAdvancedFiltersOpen(
+                                        Array.isArray(keys)
+                                            ? keys.includes("filters")
+                                            : keys === "filters",
+                                    )
+                                }
+                                expandIcon={({ isActive }) =>
+                                    isActive ? (
+                                        <MinusSquareOutlined style={{ fontSize: "20px" }} />
+                                    ) : (
+                                        <PlusSquareOutlined style={{ fontSize: "20px" }} />
+                                    )
+                                }
+                                expandIconPosition="end"
+                                items={[
+                                    {
+                                        key: "filters",
+                                        label: (
+                                            <Text strong style={{ fontSize: "14px" }}>
+                                                Advanced report filters
+                                            </Text>
+                                        ),
+                                        children: (
+                                            <Space
+                                                direction="vertical"
+                                                size={16}
+                                                style={{ width: "100%" }}
+                                            >
+                                                <div className="policy-actions-filter-row">
+                                                    <Text
+                                                        strong
+                                                        className="policy-actions-filter-label"
+                                                    >
+                                                        MDA:
+                                                    </Text>
+                                                    <div className="policy-actions-filter-field">
+                                                        <OrgUnitSelect
+                                                            value={selectedMDA}
+                                                            onChange={(value) =>
+                                                                setSelectedMDA(
+                                                                    typeof value === "string"
+                                                                        ? value
+                                                                        : undefined,
+                                                                )
+                                                            }
+                                                            showFormItem={false}
+                                                            label="MDA"
+                                                        />
+                                                        {selectedMDA && (
+                                                            <Button
+                                                                type="text"
+                                                                icon={<CloseCircleOutlined />}
+                                                                title="Clear MDA filter"
+                                                                onClick={handleMdaClear}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </Space>
+                                        ),
+                                    },
+                                ]}
+                            />
+                        </Card>
+                    </Col>
+                </Row>
+
                 <div
                     style={{
                         display: "flex",
@@ -452,56 +588,7 @@ function Component() {
                             flex: 1,
                         }}
                     >
-                        <Text
-                            strong
-                            style={{ display: "block", marginBottom: "6px" }}
-                        >
-                            Programmes
-                        </Text>
-                        <Select
-                            allowClear
-                            placeholder="Select programme"
-                            value={selectedProgramme}
-                            options={programmeOptions}
-                            style={{ width: "100%" }}
-                            onChange={(value) => setSelectedProgramme(value)}
-                        />
-                    </div>
-
-                    <div
-                        style={{
-                            minWidth: viewportWidth < 768 ? "100%" : "320px",
-                            flex: 1.15,
-                        }}
-                    >
-                        <Text
-                            strong
-                            style={{ display: "block", marginBottom: "6px" }}
-                        >
-                            MDA
-                        </Text>
-                        <OrgUnitSelect
-                            value={selectedMDA}
-                            onChange={(value) =>
-                                setSelectedMDA(
-                                    typeof value === "string" ? value : undefined,
-                                )
-                            }
-                            showFormItem={false}
-                            label="MDA"
-                        />
-                    </div>
-
-                    <div
-                        style={{
-                            minWidth: viewportWidth < 768 ? "100%" : "240px",
-                            flex: 0.9,
-                        }}
-                    >
-                        <Text
-                            strong
-                            style={{ display: "block", marginBottom: "6px" }}
-                        >
+                        <Text strong style={{ display: "block", marginBottom: "6px" }}>
                             Search
                         </Text>
                         <Input
@@ -511,7 +598,6 @@ function Component() {
                             onChange={(event) => setSearchText(event.target.value)}
                         />
                     </div>
-
                     <div
                         style={{
                             display: "flex",
@@ -818,7 +904,24 @@ function getDictionaryHeaderValue(
         case "periodType":
             return indicator.reportingCycles ?? [];
         case "vote":
-            return indicator.voteCodes ?? [];
+            return Array.from(
+                new Set(
+                    (Array.isArray(indicator.datasetAssignments)
+                        ? indicator.datasetAssignments
+                        : []
+                    )
+                        .map((assignment) =>
+                            String(
+                                (assignment as { orgUnitName?: string }).orgUnitName ?? "",
+                            ).trim(),
+                        )
+                        .filter((value) => value.length > 0),
+                ),
+            ).sort();
+        case "indicatorGroupType":
+            return formatIndicatorGroupType(
+                indicator.BmUMiIbD5XY ?? indicator.indicatorGroupType,
+            );
         default:
             for (const alias of aliases ?? []) {
                 const value = indicator[alias];
@@ -867,6 +970,25 @@ function formatOptionToken(value: string, allOptionsMap: Map<string, string>) {
     return allOptionsMap.get(value) ?? value;
 }
 
+function formatIndicatorGroupType(value: unknown) {
+    switch (String(value ?? "").trim()) {
+        case "ndpGoal":
+            return "Goal";
+        case "strategicObjective":
+            return "Strategic Objective";
+        case "outcome":
+            return "Outcome";
+        case "intermediateOutcome":
+            return "Intermediate Outcome";
+        case "output":
+            return "Output";
+        case "action":
+            return "Action";
+        default:
+            return String(value ?? "");
+    }
+}
+
 function formatNumericDisplay(value: string) {
     if (!/^-?\d+\.\d+$/.test(value)) {
         return value;
@@ -883,4 +1005,23 @@ function hasMeaningfulValue(value: unknown) {
     if (Array.isArray(value)) return value.length > 0;
     const normalized = String(value).trim();
     return normalized.length > 0 && normalized !== dictionaryPlaceholder;
+}
+
+function classifyIndicatorBucket(value: unknown): string | undefined {
+    const normalized = String(value ?? "").trim();
+
+    switch (normalized) {
+        case "ndpGoal":
+            return "goal";
+        case "strategicObjective":
+            return "strategic-objective";
+        case "outcome":
+            return "outcome";
+        case "intermediateOutcome":
+            return "intermediate-outcome";
+        case "output":
+            return "output";
+        default:
+            return undefined;
+    }
 }

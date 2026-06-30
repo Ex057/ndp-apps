@@ -78,6 +78,12 @@ export const PolicyActionSearchSchema = z
     })
     .passthrough();
 
+export const ReportingRateSearchSchema = z
+    .object({
+        v: firstStringFromQuery,
+    })
+    .passthrough();
+
 export const DataElementGroupSetResponseSchema = z.object({
     pager: z.object({
         page: z.number(),

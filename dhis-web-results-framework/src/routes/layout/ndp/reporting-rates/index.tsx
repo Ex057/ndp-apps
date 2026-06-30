@@ -1,47 +1,58 @@
-import { DownloadOutlined } from "@ant-design/icons";
+import {
+    CloseCircleOutlined,
+    DownloadOutlined,
+    MinusSquareOutlined,
+    PlusSquareOutlined,
+} from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
-import dayjs from "dayjs";
+import { useLiveQuery } from "dexie-react-hooks";
+import { uniqBy } from "lodash";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Button,
     Card,
+    Checkbox,
     Col,
+    Collapse,
     Dropdown,
     Empty,
     InputNumber,
     Row,
     Select,
+    Space,
     Table,
     Typography,
 } from "antd";
 import type { TableProps } from "antd";
 import { OrgUnitSelect } from "../../../../components/organisation";
+import { db } from "../../../../db";
 import { useWindowSize } from "../../../../hooks/use-window-size";
-import {
-    reportingRatesDatasetOptionsQueryOptions,
-    reportingRatesQueryOptions,
-    ReportingRatesQuarterOption,
-    ReportingRatesRow,
-} from "../../../../query-options";
 import { RootRoute } from "../../../__root";
 import { ReportingRatesRoute } from "./route";
 import {
     exportTrackerTableToExcel,
     exportTrackerTableToPdf,
 } from "../../../../utils/tracker-report-export";
+import { getDefaultPeriods, PERFORMANCE_COLORS } from "../../../../utils";
 import {
-    getDefaultPeriods,
-    PERFORMANCE_COLORS,
-} from "../../../../utils";
+    reportingRateSummariesQueryOptions,
+    type ReportingRateSummaryRow,
+} from "../../../../query-options";
 
 const { Text } = Typography;
 
-const bandTitles = {
-    green: "Achieved",
-    yellow: "Moderately achieved",
-    red: "Not achieved",
-} as const;
+const QUARTER_KEYS = ["Q1", "Q2", "Q3", "Q4"] as const;
+
+type QuarterKey = (typeof QUARTER_KEYS)[number];
+type PeriodColumnKey = QuarterKey | "financialYear";
+
+type ReportingSummaryCard = {
+    title: string;
+    value: string | number;
+    bg: string;
+    color: string;
+};
 
 export const ReportingRatesIndexRoute = createRoute({
     path: "/",
@@ -52,59 +63,139 @@ export const ReportingRatesIndexRoute = createRoute({
 function Component() {
     const { engine } = ReportingRatesRoute.useRouteContext();
     const { v } = ReportingRatesIndexRoute.useSearch();
-    const { configurations, ou: defaultOrgUnit } = RootRoute.useLoaderData();
+    const { configurations, programs, ou: defaultOrgUnit } =
+        RootRoute.useLoaderData();
     const { width: viewportWidth, height: viewportHeight } = useWindowSize();
-    const [selectedDataSet, setSelectedDataSet] = useState<string>();
+    const [selectedProgramme, setSelectedProgramme] = useState<string>();
     const [selectedMDA, setSelectedMDA] = useState<string>();
-    const [selectedQuarter, setSelectedQuarter] =
-        useState<ReportingRatesQuarterOption>();
+    const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>();
+    const [selectedQuarters, setSelectedQuarters] = useState<QuarterKey[]>([
+        ...QUARTER_KEYS,
+    ]);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
+    const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
     const [reportPanelHeight, setReportPanelHeight] = useState<number>();
     const [tableScrollY, setTableScrollY] = useState(320);
+    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
     const reportPanelRef = useRef<HTMLDivElement>(null);
     const reportHeaderRef = useRef<HTMLDivElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const footerRef = useRef<HTMLDivElement>(null);
 
-    const financialYears = v
-        ? configurations[v]?.data?.financialYears ?? []
-        : [];
-    const quarterOptions = useMemo(
-        () => buildQuarterOptions(financialYears),
-        [financialYears],
+    const financialYears = v ? configurations[v]?.data?.financialYears ?? [] : [];
+
+    const cachedIndicators =
+        useLiveQuery(async () => {
+            if (!v) {
+                return [];
+            }
+            return db.dataElements.where("fsIKncW1Eps").equals(v).toArray();
+        }, [v]) ?? [];
+
+    const uniqueIndicators = useMemo(
+        () => uniqBy(cachedIndicators, "id"),
+        [cachedIndicators],
     );
 
-    const datasetsQuery = useQuery(
-        reportingRatesDatasetOptionsQueryOptions(v ?? ""),
-    );
-    const reportRowsQuery = useQuery({
-        ...reportingRatesQueryOptions({
-            engine,
-            ndpVersion: v ?? "",
-            dataSetId: selectedDataSet,
-            orgUnitId: selectedMDA,
-            quarter: selectedQuarter,
-        }),
-        enabled: Boolean(v && selectedDataSet && selectedMDA && selectedQuarter),
-    });
-
     useEffect(() => {
-        if (defaultOrgUnit) {
-            setSelectedMDA(defaultOrgUnit);
-        }
-    }, [defaultOrgUnit]);
-
-    useEffect(() => {
-        if (selectedQuarter || quarterOptions.length === 0) {
+        if (selectedFinancialYear || financialYears.length === 0) {
             return;
         }
-        setSelectedQuarter(getDefaultQuarterOption(quarterOptions));
-    }, [quarterOptions, selectedQuarter]);
+        const { currentFinancialYear } = getDefaultPeriods(financialYears);
+        const fallbackFinancialYear = financialYears.slice().sort().at(-1) ?? "";
+        setSelectedFinancialYear(currentFinancialYear || fallbackFinancialYear);
+    }, [financialYears, selectedFinancialYear]);
+
+    useEffect(() => {
+        setSelectedQuarters([...QUARTER_KEYS]);
+    }, [selectedFinancialYear]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [pageSize, selectedDataSet, selectedMDA, selectedQuarter]);
+    }, [pageSize, selectedFinancialYear, selectedMDA, selectedProgramme, selectedQuarters]);
+
+    useEffect(() => {
+        setExpandedRowKeys([]);
+    }, [selectedFinancialYear, selectedMDA, selectedProgramme, selectedQuarters]);
+
+    const programmeOptions = useMemo(() => {
+        const scopeRootOrgUnitId = selectedMDA ?? defaultOrgUnit;
+        const availableProgrammeCodes = new Set<string>();
+        uniqueIndicators.forEach((indicator) => {
+            const assignments = Array.isArray(indicator.datasetAssignments)
+                ? indicator.datasetAssignments
+                : [];
+            const isInScope =
+                !scopeRootOrgUnitId ||
+                assignments.some((assignment) =>
+                    String(assignment.path ?? "")
+                        .split("/")
+                        .filter(Boolean)
+                        .includes(scopeRootOrgUnitId),
+                );
+            if (!isInScope) {
+                return;
+            }
+            const code = getProgrammeCode(indicator);
+            if (code) {
+                availableProgrammeCodes.add(code);
+            }
+        });
+
+        return programs
+            .filter((programme) => availableProgrammeCodes.has(programme.code))
+            .map((programme) => ({
+                id: programme.id,
+                name: programme.name,
+                code: programme.code,
+            }));
+    }, [defaultOrgUnit, programs, selectedMDA, uniqueIndicators]);
+
+    const selectedProgrammeOption = useMemo(
+        () =>
+            programmeOptions.find((programme) => programme.id === selectedProgramme),
+        [programmeOptions, selectedProgramme],
+    );
+
+    useEffect(() => {
+        if (
+            selectedProgramme &&
+            !programmeOptions.some((programme) => programme.id === selectedProgramme)
+        ) {
+            setSelectedProgramme(undefined);
+        }
+    }, [programmeOptions, selectedProgramme]);
+
+    const financialYearOptions = useMemo(
+        () =>
+            financialYears.slice().sort().map((financialYear) => ({
+                label: formatFinancialYearLabel(financialYear),
+                value: financialYear,
+            })),
+        [financialYears],
+    );
+
+    const quarterOptions = useMemo(
+        () =>
+            QUARTER_KEYS.map((quarter) => ({
+                label: quarter,
+                value: quarter,
+            })),
+        [],
+    );
+
+    const reportRowsQuery = useQuery(
+        reportingRateSummariesQueryOptions({
+            engine,
+            ndpVersion: v ?? "",
+            programme: selectedProgrammeOption?.code,
+            orgUnitId: selectedMDA,
+            defaultOrgUnitId: defaultOrgUnit,
+            financialYear: selectedFinancialYear,
+            quarters: selectedQuarters,
+        }),
+    );
 
     const allRows = reportRowsQuery.data ?? [];
     const pagedRows = useMemo(
@@ -151,56 +242,58 @@ function Component() {
         return () => window.cancelAnimationFrame(animationFrame);
     }, [pagedRows.length, viewportHeight, viewportWidth]);
 
-    const summary = useMemo(() => {
-        const expected = allRows.reduce((sum, row) => sum + row.expectedReports, 0);
-        const reported = allRows.reduce((sum, row) => sum + row.completedReports, 0);
-        const missing = allRows.reduce((sum, row) => sum + row.missingReports, 0);
-        const rate = expected === 0 ? 0 : (reported / expected) * 100;
-        return {
-            expected,
-            reported,
-            missing,
-            rate,
-        };
+    const selectedPeriodColumns = useMemo(
+        () => [...selectedQuarters, "financialYear"] as PeriodColumnKey[],
+        [selectedQuarters],
+    );
+
+    const summaryCards = useMemo<ReportingSummaryCard[]>(() => {
+        const assigned = allRows.reduce(
+            (sum, row) => sum + row.assignedDataSetCount,
+            0,
+        );
+        const financialYearRate =
+            allRows.length === 0
+                ? 0
+                : allRows.reduce(
+                    (sum, row) => sum + row.periodSummaries.financialYear.rate,
+                    0,
+                ) / allRows.length;
+
+        return [
+            {
+                title: "MDA/LG",
+                value: allRows.length,
+                bg: "#d8e8ff",
+                color: "#1f4b8f",
+            },
+            {
+                title: "Assigned Datasets",
+                value: assigned,
+                bg: "#d7f1ef",
+                color: "#16656b",
+            },
+            {
+                title: "Financial Year Rate",
+                value: `${Math.round(financialYearRate)}%`,
+                bg: "#f8ebc2",
+                color: "#8c6d1f",
+            },
+        ];
     }, [allRows]);
 
-    const columns = useMemo<TableProps<ReportingRatesRow>["columns"]>(
+    const columns = useMemo<TableProps<ReportingRateSummaryRow>["columns"]>(
         () => [
-            makeTextColumn("Org Unit", "orgUnitName", 180),
-            makeTextColumn("Dataset", "dataSetName", 180),
-            makeTextColumn("Quarter", "quarterLabel", 120),
-            makeNumberColumn("Expected", "expectedReports", 110, "right"),
-            makeNumberColumn("Reported", "completedReports", 110, "right"),
-            makeNumberColumn("Missing", "missingReports", 110, "right"),
-            {
-                title: "Rate (%)",
-                dataIndex: "reportingRateDisplay",
-                key: "reportingRateDisplay",
-                width: 130,
-                align: "center",
-                onHeaderCell: () => ({ style: getSharedCellStyle("Rate (%)", 130) }),
-                onCell: (record) => ({
-                    style: getSharedCellStyle("Rate (%)", 130),
-                }),
-                render: (_, record) => (
-                    <div style={getBandCellStyle(record.performanceBand)}>
-                        {record.reportingRateDisplay}
-                    </div>
+            makeTextColumn("MDA/LG", "orgUnitName", 220),
+            ...selectedPeriodColumns.map((periodKey) =>
+                makePeriodColumn(
+                    periodKey === "financialYear" ? "Financial Year" : periodKey,
+                    periodKey,
+                    periodKey === "financialYear" ? 180 : 160,
                 ),
-            },
-            {
-                title: "Band",
-                dataIndex: "performanceBand",
-                key: "performanceBand",
-                width: 180,
-                onHeaderCell: () => ({ style: getSharedCellStyle("Band", 180) }),
-                onCell: () => ({ style: getSharedCellStyle("Band", 180) }),
-                render: (value: ReportingRatesRow["performanceBand"]) => (
-                    <div style={getBandCellStyle(value)}>{bandTitles[value]}</div>
-                ),
-            },
+            ),
         ],
-        [],
+        [selectedPeriodColumns],
     );
 
     const handlePdfExport = useCallback(() => {
@@ -208,29 +301,51 @@ function Component() {
         void exportTrackerTableToPdf({
             columns,
             rows: allRows,
-            title: "Reporting Rates",
+            title: "Reporting Rate Summaries",
             subtitle: buildSubtitle(
-                datasetsQuery.data?.find((item) => item.value === selectedDataSet)
-                    ?.label,
-                selectedQuarter?.label,
+                selectedProgramme
+                    ? selectedProgrammeOption?.name
+                    : undefined,
+                selectedFinancialYear,
+                selectedQuarters,
+                selectedMDA ? "Filtered subtree" : "All org units",
             ),
         });
-    }, [allRows, columns, datasetsQuery.data, selectedDataSet, selectedQuarter]);
+    }, [
+        allRows,
+        columns,
+        selectedProgrammeOption,
+        selectedFinancialYear,
+        selectedMDA,
+        selectedProgramme,
+        selectedQuarters,
+    ]);
 
     const handleExcelExport = useCallback(() => {
         if (allRows.length === 0) return;
         void exportTrackerTableToExcel({
             columns,
             rows: allRows,
-            title: "Reporting Rates",
+            title: "Reporting Rate Summaries",
             subtitle: buildSubtitle(
-                datasetsQuery.data?.find((item) => item.value === selectedDataSet)
-                    ?.label,
-                selectedQuarter?.label,
+                selectedProgramme
+                    ? selectedProgrammeOption?.name
+                    : undefined,
+                selectedFinancialYear,
+                selectedQuarters,
+                selectedMDA ? "Filtered subtree" : "All org units",
             ),
-            sheetName: "Reporting Rates",
+            sheetName: "Reporting Rate Summaries",
         });
-    }, [allRows, columns, datasetsQuery.data, selectedDataSet, selectedQuarter]);
+    }, [
+        allRows,
+        columns,
+        selectedProgrammeOption,
+        selectedFinancialYear,
+        selectedMDA,
+        selectedProgramme,
+        selectedQuarters,
+    ]);
 
     const downloadMenuItems = [
         { key: "pdf", label: "PDF", onClick: handlePdfExport },
@@ -254,130 +369,229 @@ function Component() {
                     height: reportPanelHeight,
                 }}
             >
+                <div ref={reportHeaderRef} style={{ marginBottom: "12px" }}>
+                    <Row gutter={[16, 16]} align="stretch">
+                        <Col xs={24} md={14}>
+                            <Card
+                                size="small"
+                                style={{
+                                    backgroundColor: "#d0ebd0",
+                                    borderColor: "#a4d2a3",
+                                    width: "100%",
+                                    height: "100%",
+                                    borderRadius: "3px",
+                                }}
+                                styles={{
+                                    body: {
+                                        padding: "12px",
+                                        height: "100%",
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                    },
+                                }}
+                            >
+                                <Row
+                                    align="middle"
+                                    gutter={[12, 12]}
+                                    style={{ width: "100%" }}
+                                >
+                                    <Col xs={24} sm={5}>
+                                        <Text strong style={{ fontSize: "14px" }}>
+                                            Programme
+                                        </Text>
+                                    </Col>
+                                    <Col xs={24} sm={19}>
+                                        <Select
+                                            allowClear
+                                            placeholder="Select programme"
+                                            value={selectedProgramme}
+                                            options={programmeOptions}
+                                            fieldNames={{ label: "name", value: "id" }}
+                                            style={{ width: "100%" }}
+                                            onChange={(value) => setSelectedProgramme(value)}
+                                        />
+                                    </Col>
+                                </Row>
+                            </Card>
+                        </Col>
+                        <Col xs={24} md={10}>
+                            <Card
+                                size="small"
+                                style={{
+                                    backgroundColor: "#bbd1ee",
+                                    borderColor: "#729fcf",
+                                    height: "100%",
+                                    width: "100%",
+                                    borderRadius: "3px",
+                                }}
+                                styles={{ body: { padding: "12px", height: "100%" } }}
+                            >
+                                <Collapse
+                                    bordered={false}
+                                    activeKey={isAdvancedFiltersOpen ? ["filters"] : []}
+                                    onChange={(keys) =>
+                                        setIsAdvancedFiltersOpen(
+                                            Array.isArray(keys)
+                                                ? keys.includes("filters")
+                                                : keys === "filters",
+                                        )
+                                    }
+                                    expandIcon={({ isActive }) =>
+                                        isActive ? (
+                                            <MinusSquareOutlined
+                                                style={{ fontSize: "20px" }}
+                                            />
+                                        ) : (
+                                            <PlusSquareOutlined
+                                                style={{ fontSize: "20px" }}
+                                            />
+                                        )
+                                    }
+                                    expandIconPosition="end"
+                                    items={[
+                                        {
+                                            key: "filters",
+                                            label: (
+                                                <Text strong style={{ fontSize: "14px" }}>
+                                                    Advanced report filters
+                                                </Text>
+                                            ),
+                                            children: (
+                                                <Space
+                                                    direction="vertical"
+                                                    size={16}
+                                                    style={{ width: "100%" }}
+                                                >
+                                                    <div className="policy-actions-filter-row">
+                                                        <Text
+                                                            strong
+                                                            className="policy-actions-filter-label"
+                                                        >
+                                                            MDA/LG
+                                                        </Text>
+                                                        <div className="policy-actions-filter-field">
+                                                            <OrgUnitSelect
+                                                                showFormItem={false}
+                                                                value={selectedMDA}
+                                                                onChange={(value) =>
+                                                                    setSelectedMDA(
+                                                                        typeof value === "string"
+                                                                            ? value
+                                                                            : undefined,
+                                                                    )
+                                                                }
+                                                                label="MDA/LG"
+                                                            />
+                                                            {selectedMDA && (
+                                                                <Button
+                                                                    type="text"
+                                                                    icon={
+                                                                        <CloseCircleOutlined />
+                                                                    }
+                                                                    title="Clear MDA filter"
+                                                                    onClick={() =>
+                                                                        setSelectedMDA(undefined)
+                                                                    }
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="policy-actions-filter-row">
+                                                        <Text
+                                                            strong
+                                                            className="policy-actions-filter-label"
+                                                        >
+                                                            Financial Year
+                                                        </Text>
+                                                        <div className="policy-actions-filter-field">
+                                                            <Select
+                                                                placeholder="Select financial year"
+                                                                value={selectedFinancialYear}
+                                                                options={financialYearOptions}
+                                                                style={{ width: "100%" }}
+                                                                onChange={(value) =>
+                                                                    setSelectedFinancialYear(
+                                                                        value,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </Space>
+                                            ),
+                                        },
+                                    ]}
+                                />
+                            </Card>
+                        </Col>
+                    </Row>
+                </div>
+
                 <div
-                    ref={reportHeaderRef}
-                    className="reporting-rates-report-header"
                     style={{
+                        display: "flex",
+                        gap: "12px",
+                        alignItems: "flex-end",
+                        flexWrap: "wrap",
                         marginBottom: "8px",
-                        background: "#eef4fb",
-                        border: "1px solid #d7e3f1",
-                        borderRadius: "3px",
-                        padding: "8px 10px",
                     }}
                 >
-                    <div
-                        style={{
-                            display: "flex",
-                            gap: "12px",
-                            alignItems: "flex-end",
-                            flexWrap: "wrap",
-                        }}
-                    >
-                        <div style={{ minWidth: "260px", flex: 1 }}>
-                            <Text strong style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>
-                                Dataset
-                            </Text>
-                            <Select
-                                allowClear
-                                placeholder="Select dataset"
-                                value={selectedDataSet}
-                                loading={datasetsQuery.isLoading}
-                                options={(datasetsQuery.data ?? []).map((item) => ({
-                                    label: item.label,
-                                    value: item.value,
-                                }))}
-                                style={{ width: "100%" }}
-                                onChange={(value) => setSelectedDataSet(value)}
-                            />
-                        </div>
-                        <div style={{ minWidth: "280px", flex: 1 }}>
-                            <Text strong style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>
-                                MDA/LG
-                            </Text>
-                            <OrgUnitSelect
-                                showFormItem={false}
-                                value={selectedMDA}
-                                onChange={(value) =>
-                                    setSelectedMDA(
-                                        typeof value === "string" ? value : undefined,
-                                    )
-                                }
-                                label="MDA/LG"
-                            />
-                        </div>
-                        <div style={{ minWidth: "220px", flex: 0.8 }}>
-                            <Text strong style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>
-                                Quarter
-                            </Text>
-                            <Select
-                                placeholder="Select quarter"
-                                value={selectedQuarter?.value}
-                                options={quarterOptions.map((item) => ({
-                                    label: item.label,
-                                    value: item.value,
-                                }))}
-                                style={{ width: "100%" }}
-                                onChange={(value) =>
-                                    setSelectedQuarter(
-                                        quarterOptions.find((item) => item.value === value),
-                                    )
-                                }
-                            />
-                        </div>
-                        <div
+                    <div style={{ minWidth: "220px", flex: 1 }}>
+                        <Text
+                            strong
                             style={{
-                                display: "flex",
-                                gap: "8px",
-                                alignItems: "center",
-                                marginLeft: "auto",
+                                display: "block",
+                                marginBottom: "4px",
+                                fontSize: "14px",
                             }}
                         >
-                            <Dropdown menu={{ items: downloadMenuItems }} trigger={["click"]}>
-                                <Button
-                                    size="small"
-                                    icon={<DownloadOutlined />}
-                                    disabled={allRows.length === 0}
-                                />
-                            </Dropdown>
-                        </div>
+                            Quarters
+                        </Text>
+                        <Select
+                            mode="multiple"
+                            placeholder="Select quarters"
+                            value={selectedQuarters}
+                            options={quarterOptions}
+                            maxTagCount="responsive"
+                            style={{ width: "100%" }}
+                            onChange={(values) =>
+                                setSelectedQuarters(
+                                    orderSelectedQuarters(values as QuarterKey[]),
+                                )
+                            }
+                        />
+                    </div>
+                    <div style={{ minWidth: "240px", flex: 1 }}>
+                        <div style={{ minHeight: "56px" }} />
                     </div>
                 </div>
 
-                {!selectedDataSet ? (
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginBottom: "8px",
+                    }}
+                >
+                    <Dropdown menu={{ items: downloadMenuItems }} trigger={["click"]}>
+                        <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            disabled={allRows.length === 0}
+                        />
+                    </Dropdown>
+                </div>
+
+                {!selectedFinancialYear || selectedQuarters.length === 0 ? (
                     <div className="reporting-rates-empty-state">
-                        <Empty description="Choose a dataset to assess reporting rates." />
+                        <Empty description="Choose a financial year and at least one quarter to view reporting rate summaries." />
                     </div>
                 ) : (
                     <>
                         <div ref={summaryRef} style={{ marginBottom: "8px" }}>
                             <Row gutter={[12, 12]} style={{ marginBottom: "8px" }}>
-                                {[
-                                    {
-                                        title: "Expected Reports",
-                                        value: summary.expected,
-                                        bg: "#d8e8ff",
-                                        color: "#1f4b8f",
-                                    },
-                                    {
-                                        title: "Reported",
-                                        value: summary.reported,
-                                        bg: "#d8f0dd",
-                                        color: "#1f6f43",
-                                    },
-                                    {
-                                        title: "Missing",
-                                        value: summary.missing,
-                                        bg: "#f6d4d0",
-                                        color: "#9d2d22",
-                                    },
-                                    {
-                                        title: "Overall Rate",
-                                        value: `${summary.rate.toFixed(2)}%`,
-                                        bg: "#f8ebc2",
-                                        color: "#8c6d1f",
-                                    },
-                                ].map((card) => (
-                                    <Col key={card.title} xs={24} sm={12} md={8} lg={6} xl={24 / 7}>
+                                {summaryCards.map((card) => (
+                                    <Col key={card.title} xs={24} sm={12} md={8} lg={6}>
                                         <Card
                                             size="small"
                                             styles={{
@@ -392,7 +606,13 @@ function Component() {
                                                 },
                                             }}
                                         >
-                                            <Text strong style={{ color: card.color, fontSize: "14px" }}>
+                                            <Text
+                                                strong
+                                                style={{
+                                                    color: card.color,
+                                                    fontSize: "14px",
+                                                }}
+                                            >
                                                 {card.title}
                                             </Text>
                                             <Text
@@ -413,13 +633,13 @@ function Component() {
 
                         {reportRowsQuery.error && (
                             <Typography.Text type="danger">
-                                Unable to load reporting rates for the selected criteria.
+                                Unable to load reporting rate summaries for the selected criteria.
                             </Typography.Text>
                         )}
 
                         <div
                             className="reporting-rates-table-region"
-                            style={{ flex: 1, minHeight: 0, overflow: "hidden" }}
+                            style={{ flex: 1, minHeight: 0, overflow: "auto" }}
                         >
                             <Table
                                 className="reporting-rates-table"
@@ -433,9 +653,75 @@ function Component() {
                                 pagination={false}
                                 sticky
                                 scroll={{ x: "max-content", y: tableScrollY }}
+                                expandable={{
+                                    expandedRowKeys,
+                                    onExpandedRowsChange: (keys) =>
+                                        setExpandedRowKeys(keys),
+                                    expandedRowRender: (record) => (
+                                        <Table
+                                            className="reporting-rates-expanded-table"
+                                            rowKey="key"
+                                            size="small"
+                                            pagination={false}
+                                            dataSource={record.assignedDataSets}
+                                            scroll={{ x: "max-content" }}
+                                            columns={[
+                                                {
+                                                    title: "Dataset",
+                                                    dataIndex: "dataSetName",
+                                                    key: "dataSetName",
+                                                    width: 260,
+                                                },
+                                                {
+                                                    title: "Reporting Cycle",
+                                                    dataIndex: "periodType",
+                                                    key: "periodType",
+                                                    width: 180,
+                                                    render: (value: string) =>
+                                                        value || "-",
+                                                },
+                                                {
+                                                    title: "Levels",
+                                                    dataIndex:
+                                                        "indicatorGroupTypeLabel",
+                                                    key: "indicatorGroupTypeLabel",
+                                                    width: 260,
+                                                    render: (value: string) =>
+                                                        value || "-",
+                                                },
+                                                {
+                                                    title: "Reported",
+                                                    dataIndex: "reported",
+                                                    key: "reported",
+                                                    align: "center",
+                                                    width: 120,
+                                                    render: (value: boolean) => (
+                                                        <Checkbox
+                                                            checked={value}
+                                                            disabled
+                                                        />
+                                                    ),
+                                                },
+                                            ]}
+                                        />
+                                    ),
+                                    rowExpandable: (record) =>
+                                        record.assignedDataSets.length > 0,
+                                }}
+                                onRow={(record) => ({
+                                    onClick: () =>
+                                        setExpandedRowKeys((current) =>
+                                            current.includes(record.key)
+                                                ? current.filter(
+                                                    (key) => key !== record.key,
+                                                )
+                                                : [...current, record.key],
+                                        ),
+                                    style: { cursor: "pointer" },
+                                })}
                                 locale={{
                                     emptyText: (
-                                        <Empty description="No reporting-rate rows were found for the selected dataset, quarter, and org unit." />
+                                        <Empty description="No eligible NDPIV dataset assignments matched the selected filters." />
                                     ),
                                 }}
                             />
@@ -515,77 +801,29 @@ function Component() {
     );
 }
 
-function buildQuarterOptions(financialYears: string[]): ReportingRatesQuarterOption[] {
-    return financialYears
-        .slice()
-        .sort()
-        .flatMap((financialYear) => {
-            const year = Number(financialYear.slice(0, 4));
-            if (!Number.isFinite(year)) {
-                return [];
-            }
-            return [
-                {
-                    value: `${year}Q3`,
-                    label: `${year}/${year + 1} Q1`,
-                    financialYear,
-                    quarter: "Q1" as const,
-                },
-                {
-                    value: `${year}Q4`,
-                    label: `${year}/${year + 1} Q2`,
-                    financialYear,
-                    quarter: "Q2" as const,
-                },
-                {
-                    value: `${year + 1}Q1`,
-                    label: `${year}/${year + 1} Q3`,
-                    financialYear,
-                    quarter: "Q3" as const,
-                },
-                {
-                    value: `${year + 1}Q2`,
-                    label: `${year}/${year + 1} Q4`,
-                    financialYear,
-                    quarter: "Q4" as const,
-                },
-            ];
-        });
+function orderSelectedQuarters(quarters: QuarterKey[]) {
+    return QUARTER_KEYS.filter((quarter) => quarters.includes(quarter));
 }
 
-function getDefaultQuarterOption(
-    quarterOptions: ReportingRatesQuarterOption[],
-) {
-    if (quarterOptions.length === 0) {
-        return undefined;
+function getProgrammeCode(indicator: Record<string, unknown>) {
+    return String(
+        indicator.ndpProgramme ??
+            indicator["NDP Programme List"] ??
+            indicator["UBWSASWdyfi"] ??
+            indicator["Programme"] ??
+            "",
+    ).trim();
+}
+
+function formatFinancialYearLabel(financialYear: string) {
+    const startYear = Number(financialYear.slice(0, 4));
+    if (!Number.isFinite(startYear)) {
+        return financialYear;
     }
-    const currentMonth = dayjs().month();
-    const currentYear =
-        currentMonth < 6 ? dayjs().subtract(1, "year").year() : dayjs().year();
-    const currentFinancialYear = `${currentYear}July`;
-    const { currentFinancialYear: configuredFinancialYear } = getDefaultPeriods(
-        quarterOptions.map((item) => item.financialYear),
-    );
-    const activeFinancialYear = configuredFinancialYear || currentFinancialYear;
-    const currentQuarter =
-        currentMonth >= 6 && currentMonth <= 8
-            ? "Q1"
-            : currentMonth >= 9 && currentMonth <= 11
-              ? "Q2"
-              : currentMonth <= 2
-                ? "Q3"
-                : "Q4";
-
-    return (
-        quarterOptions.find(
-            (option) =>
-                option.financialYear === activeFinancialYear &&
-                option.quarter === currentQuarter,
-        ) ?? quarterOptions.at(-1)
-    );
+    return `${startYear}/${startYear + 1}`;
 }
 
-function getSharedCellStyle(label: string, width: number): React.CSSProperties {
+function getSharedCellStyle(width: number): React.CSSProperties {
     return {
         width,
         minWidth: width,
@@ -598,60 +836,75 @@ function getSharedCellStyle(label: string, width: number): React.CSSProperties {
 }
 
 function getBandCellStyle(
-    band: ReportingRatesRow["performanceBand"],
+    band: PeriodSummary["performanceBand"],
 ): React.CSSProperties {
     const color =
         band === "green"
             ? PERFORMANCE_COLORS.green
             : band === "yellow"
-              ? PERFORMANCE_COLORS.yellow
-              : PERFORMANCE_COLORS.red;
+                ? PERFORMANCE_COLORS.yellow
+                : PERFORMANCE_COLORS.red;
 
     return {
         backgroundColor: color.bg,
-        color: color.fg,
-        margin: "-6px -8px",
-        padding: "6px 8px",
-        minHeight: "100%",
+        color: "#ffffff",
         textAlign: "center",
     };
 }
 
-function makeTextColumn(title: string, dataIndex: keyof ReportingRatesRow, width: number) {
-    return {
-        title,
-        dataIndex,
-        key: String(dataIndex),
-        width,
-        onHeaderCell: () => ({ style: getSharedCellStyle(title, width) }),
-        onCell: () => ({ style: getSharedCellStyle(title, width) }),
-    } satisfies NonNullable<TableProps<ReportingRatesRow>["columns"]>[number];
-}
-
-function makeNumberColumn(
+function makeTextColumn(
     title: string,
-    dataIndex: keyof ReportingRatesRow,
+    dataIndex: keyof ReportingRateSummaryRow,
     width: number,
-    align: "left" | "right" | "center",
 ) {
     return {
         title,
         dataIndex,
         key: String(dataIndex),
         width,
-        align,
-        onHeaderCell: () => ({ style: getSharedCellStyle(title, width) }),
-        onCell: () => ({ style: getSharedCellStyle(title, width) }),
-    } satisfies NonNullable<TableProps<ReportingRatesRow>["columns"]>[number];
+        onHeaderCell: () => ({ style: getSharedCellStyle(width) }),
+        onCell: () => ({ style: getSharedCellStyle(width) }),
+    } satisfies NonNullable<TableProps<ReportingRateSummaryRow>["columns"]>[number];
 }
 
-function buildSubtitle(datasetName?: string, quarterLabel?: string) {
-    const parts = ["Reporting Rates"];
-    if (datasetName) {
-        parts.push(`Dataset: ${datasetName}`);
+function makePeriodColumn(
+    title: string,
+    periodKey: PeriodColumnKey,
+    width: number,
+) {
+    return {
+        title,
+        dataIndex: periodKey,
+        key: periodKey,
+        width,
+        align: "center" as const,
+        onHeaderCell: () => ({ style: getSharedCellStyle(width) }),
+        onCell: (record: ReportingRateSummaryRow) => ({
+            style: {
+                ...getSharedCellStyle(width),
+                ...getBandCellStyle(record.periodSummaries[periodKey].performanceBand),
+            },
+        }),
+        render: (_: unknown, record: ReportingRateSummaryRow) =>
+            record.periodSummaries[periodKey].display,
+    } satisfies NonNullable<TableProps<ReportingRateSummaryRow>["columns"]>[number];
+}
+
+function buildSubtitle(
+    programmeName: string | undefined,
+    financialYear: string | undefined,
+    quarters: QuarterKey[],
+    scopeLabel: string,
+) {
+    const parts = ["Reporting Rate Summaries", scopeLabel];
+    if (programmeName) {
+        parts.push(`Programme: ${programmeName}`);
     }
-    if (quarterLabel) {
-        parts.push(`Quarter: ${quarterLabel}`);
+    if (financialYear) {
+        parts.push(`Financial Year: ${formatFinancialYearLabel(financialYear)}`);
+    }
+    if (quarters.length > 0) {
+        parts.push(`Quarters: ${orderSelectedQuarters(quarters).join(", ")}`);
     }
     return parts.join(" | ");
 }
