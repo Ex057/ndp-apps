@@ -6,13 +6,10 @@ import {
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { createRoute } from "@tanstack/react-router";
-import { useLiveQuery } from "dexie-react-hooks";
-import { uniqBy } from "lodash";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Button,
     Card,
-    Checkbox,
     Col,
     Collapse,
     Dropdown,
@@ -26,41 +23,47 @@ import {
 } from "antd";
 import type { TableProps } from "antd";
 import { OrgUnitSelect } from "../../../../components/organisation";
-import { db } from "../../../../db";
-import { useWindowSize } from "../../../../hooks/use-window-size";
 import {
     reportingRateSummariesQueryOptions,
+    type ReportingRateProgrammeExpandedRow,
     type ReportingRateSummaryRow,
 } from "../../../../query-options";
 import { RootRoute } from "../../../__root";
-import { ReportingRatesRoute } from "./route";
+import { ProgrammeReportingRateCompletenessRoute } from "./route";
 import {
     exportTrackerTableToExcel,
     exportTrackerTableToPdf,
 } from "../../../../utils/tracker-report-export";
 import { getDefaultPeriods, PERFORMANCE_COLORS } from "../../../../utils";
+import { useWindowSize } from "../../../../hooks/use-window-size";
 
 const { Text } = Typography;
 
 const QUARTER_KEYS = ["Q1", "Q2", "Q3", "Q4"] as const;
+const PROGRAMME_TYPE_ORDER = [
+    "ndpGoal",
+    "strategicObjective",
+    "outcome",
+    "intermediateOutcome",
+    "output",
+] as const;
 
 type QuarterKey = (typeof QUARTER_KEYS)[number];
 type PeriodColumnKey = QuarterKey | "financialYear";
 type Band = "green" | "yellow" | "red";
 
-export const ReportingRatesIndexRoute = createRoute({
+export const ProgrammeReportingRateCompletenessIndexRoute = createRoute({
     path: "/",
-    getParentRoute: () => ReportingRatesRoute,
+    getParentRoute: () => ProgrammeReportingRateCompletenessRoute,
     component: Component,
 });
 
 function Component() {
-    const { engine } = ReportingRatesRoute.useRouteContext();
-    const { v } = ReportingRatesIndexRoute.useSearch();
+    const { engine } = ProgrammeReportingRateCompletenessRoute.useRouteContext();
+    const { v } = ProgrammeReportingRateCompletenessIndexRoute.useSearch();
     const { configurations, programs, ou: defaultOrgUnit } =
         RootRoute.useLoaderData();
     const { width: viewportWidth, height: viewportHeight } = useWindowSize();
-    const [selectedProgramme, setSelectedProgramme] = useState<string>();
     const [selectedMDA, setSelectedMDA] = useState<string>();
     const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>();
     const [selectedQuarters, setSelectedQuarters] = useState<QuarterKey[]>([
@@ -73,26 +76,13 @@ function Component() {
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
     const [reportPanelHeight, setReportPanelHeight] = useState<number>();
     const [tableScrollY, setTableScrollY] = useState(320);
-    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
+    const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(true);
     const reportPanelRef = useRef<HTMLDivElement>(null);
     const reportHeaderRef = useRef<HTMLDivElement>(null);
     const summaryRef = useRef<HTMLDivElement>(null);
     const footerRef = useRef<HTMLDivElement>(null);
 
     const financialYears = v ? configurations[v]?.data?.financialYears ?? [] : [];
-
-    const cachedIndicators =
-        useLiveQuery(async () => {
-            if (!v) {
-                return [];
-            }
-            return db.dataElements.where("fsIKncW1Eps").equals(v).toArray();
-        }, [v]) ?? [];
-
-    const uniqueIndicators = useMemo(
-        () => uniqBy(cachedIndicators, "id"),
-        [cachedIndicators],
-    );
 
     useEffect(() => {
         if (selectedFinancialYear || financialYears.length === 0) {
@@ -109,11 +99,11 @@ function Component() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [pageSize, selectedFinancialYear, selectedMDA, selectedProgramme, selectedQuarters]);
+    }, [pageSize, selectedFinancialYear, selectedMDA, selectedQuarters]);
 
     useEffect(() => {
         setExpandedRowKeys([]);
-    }, [selectedFinancialYear, selectedMDA, selectedProgramme, selectedQuarters]);
+    }, [selectedFinancialYear, selectedMDA, selectedQuarters]);
 
     useEffect(() => {
         if (hasInitializedDefaultMda) return;
@@ -122,54 +112,6 @@ function Component() {
         }
         setHasInitializedDefaultMda(true);
     }, [defaultOrgUnit, hasInitializedDefaultMda]);
-
-    const programmeOptions = useMemo(() => {
-        const scopeRootOrgUnitId = selectedMDA ?? defaultOrgUnit;
-        const availableProgrammeCodes = new Set<string>();
-        uniqueIndicators.forEach((indicator) => {
-            const assignments = Array.isArray(indicator.datasetAssignments)
-                ? indicator.datasetAssignments
-                : [];
-            const isInScope =
-                !scopeRootOrgUnitId ||
-                assignments.some((assignment) =>
-                    String(assignment.path ?? "")
-                        .split("/")
-                        .filter(Boolean)
-                        .includes(scopeRootOrgUnitId),
-                );
-            if (!isInScope) {
-                return;
-            }
-            const code = getProgrammeCode(indicator);
-            if (code) {
-                availableProgrammeCodes.add(code);
-            }
-        });
-
-        return programs
-            .filter((programme) => availableProgrammeCodes.has(programme.code))
-            .map((programme) => ({
-                id: programme.id,
-                name: programme.name,
-                code: programme.code,
-            }));
-    }, [defaultOrgUnit, programs, selectedMDA, uniqueIndicators]);
-
-    const selectedProgrammeOption = useMemo(
-        () =>
-            programmeOptions.find((programme) => programme.id === selectedProgramme),
-        [programmeOptions, selectedProgramme],
-    );
-
-    useEffect(() => {
-        if (
-            selectedProgramme &&
-            !programmeOptions.some((programme) => programme.id === selectedProgramme)
-        ) {
-            setSelectedProgramme(undefined);
-        }
-    }, [programmeOptions, selectedProgramme]);
 
     const financialYearOptions = useMemo(
         () =>
@@ -193,13 +135,12 @@ function Component() {
         reportingRateSummariesQueryOptions({
             engine,
             ndpVersion: v ?? "",
-            programme: selectedProgrammeOption?.code,
             programmes: programs,
             orgUnitId: selectedMDA,
             defaultOrgUnitId: defaultOrgUnit,
             financialYear: selectedFinancialYear,
             quarters: selectedQuarters,
-            view: "vote",
+            view: "programme",
         }),
     );
 
@@ -267,7 +208,7 @@ function Component() {
                 ) / allRows.length;
 
         return [
-            { title: "MDA/LG", value: allRows.length, bg: "#d8e8ff", color: "#1f4b8f" },
+            { title: "Programme", value: allRows.length, bg: "#d8e8ff", color: "#1f4b8f" },
             {
                 title: "Assigned Datasets",
                 value: assigned,
@@ -283,9 +224,9 @@ function Component() {
         ];
     }, [allRows]);
 
-    const columns = useMemo<TableProps<ReportingRateSummaryRow>["columns"]>(
+    const programmeColumns = useMemo<TableProps<ReportingRateSummaryRow>["columns"]>(
         () => [
-            makeTextColumn("MDA/LG", "entityName", 220),
+            makeTextColumn("Programme", "entityName", 260),
             ...selectedPeriodColumns.map((periodKey) =>
                 makePeriodColumn(
                     periodKey === "financialYear" ? "Financial Year" : periodKey,
@@ -297,52 +238,52 @@ function Component() {
         [selectedPeriodColumns],
     );
 
+    const indicatorGroupTypes = useMemo(() => {
+        const discovered = new Set<string>();
+        allRows.forEach((row) => {
+            row.programmeExpandedRows.forEach((expandedRow) => {
+                Object.keys(expandedRow.indicatorGroupTypeSummaries).forEach((type) =>
+                    discovered.add(type),
+                );
+            });
+        });
+
+        return [
+            ...PROGRAMME_TYPE_ORDER.filter((type) => discovered.has(type)),
+            ...Array.from(discovered).filter(
+                (type) => !PROGRAMME_TYPE_ORDER.includes(type as never),
+            ),
+        ];
+    }, [allRows]);
+
     const handlePdfExport = useCallback(() => {
         if (allRows.length === 0) return;
         void exportTrackerTableToPdf({
-            columns,
+            columns: programmeColumns,
             rows: allRows,
             title: "Reporting Rate Completeness",
             subtitle: buildSubtitle(
-                selectedProgramme ? selectedProgrammeOption?.name : undefined,
                 selectedFinancialYear,
                 selectedQuarters,
-                selectedMDA ? "Filtered subtree" : "All org units",
+                selectedMDA ? "Filtered subtree" : "All programmes",
             ),
         });
-    }, [
-        allRows,
-        columns,
-        selectedFinancialYear,
-        selectedMDA,
-        selectedProgramme,
-        selectedProgrammeOption,
-        selectedQuarters,
-    ]);
+    }, [allRows, programmeColumns, selectedFinancialYear, selectedMDA, selectedQuarters]);
 
     const handleExcelExport = useCallback(() => {
         if (allRows.length === 0) return;
         void exportTrackerTableToExcel({
-            columns,
+            columns: programmeColumns,
             rows: allRows,
             title: "Reporting Rate Completeness",
             subtitle: buildSubtitle(
-                selectedProgramme ? selectedProgrammeOption?.name : undefined,
                 selectedFinancialYear,
                 selectedQuarters,
-                selectedMDA ? "Filtered subtree" : "All org units",
+                selectedMDA ? "Filtered subtree" : "All programmes",
             ),
             sheetName: "Reporting Rate Completeness",
         });
-    }, [
-        allRows,
-        columns,
-        selectedFinancialYear,
-        selectedMDA,
-        selectedProgramme,
-        selectedProgrammeOption,
-        selectedQuarters,
-    ]);
+    }, [allRows, programmeColumns, selectedFinancialYear, selectedMDA, selectedQuarters]);
 
     return (
         <div className="reporting-rates-page">
@@ -363,46 +304,7 @@ function Component() {
             >
                 <div ref={reportHeaderRef} style={{ marginBottom: "12px" }}>
                     <Row gutter={[16, 16]} align="stretch">
-                        <Col xs={24} md={14}>
-                            <Card
-                                size="small"
-                                style={{
-                                    backgroundColor: "#d0ebd0",
-                                    borderColor: "#a4d2a3",
-                                    width: "100%",
-                                    height: "100%",
-                                    borderRadius: "3px",
-                                }}
-                                styles={{
-                                    body: {
-                                        padding: "12px",
-                                        height: "100%",
-                                        display: "flex",
-                                        alignItems: "flex-start",
-                                    },
-                                }}
-                            >
-                                <Row align="middle" gutter={[12, 12]} style={{ width: "100%" }}>
-                                    <Col xs={24} sm={5}>
-                                        <Text strong style={{ fontSize: "14px" }}>
-                                            Programme
-                                        </Text>
-                                    </Col>
-                                    <Col xs={24} sm={19}>
-                                        <Select
-                                            allowClear
-                                            placeholder="Select programme"
-                                            value={selectedProgramme}
-                                            options={programmeOptions}
-                                            fieldNames={{ label: "name", value: "id" }}
-                                            style={{ width: "100%" }}
-                                            onChange={(value) => setSelectedProgramme(value)}
-                                        />
-                                    </Col>
-                                </Row>
-                            </Card>
-                        </Col>
-                        <Col xs={24} md={10}>
+                        <Col xs={24} md={16}>
                             <Card
                                 size="small"
                                 style={{
@@ -497,6 +399,31 @@ function Component() {
                                                             />
                                                         </div>
                                                     </div>
+                                                    <div className="policy-actions-filter-row">
+                                                        <Text
+                                                            strong
+                                                            className="policy-actions-filter-label"
+                                                        >
+                                                            Quarters
+                                                        </Text>
+                                                        <div className="policy-actions-filter-field">
+                                                            <Select
+                                                                mode="multiple"
+                                                                placeholder="Select quarters"
+                                                                value={selectedQuarters}
+                                                                options={quarterOptions}
+                                                                maxTagCount="responsive"
+                                                                style={{ width: "100%" }}
+                                                                onChange={(values) =>
+                                                                    setSelectedQuarters(
+                                                                        orderSelectedQuarters(
+                                                                            values as QuarterKey[],
+                                                                        ),
+                                                                    )
+                                                                }
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </Space>
                                             ),
                                         },
@@ -504,58 +431,37 @@ function Component() {
                                 />
                             </Card>
                         </Col>
+                        <Col xs={24} md={8}>
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "flex-end",
+                                    alignItems: "flex-start",
+                                    height: "100%",
+                                }}
+                            >
+                                <Dropdown
+                                    menu={{
+                                        items: [
+                                            { key: "pdf", label: "PDF", onClick: handlePdfExport },
+                                            {
+                                                key: "excel",
+                                                label: "Excel",
+                                                onClick: handleExcelExport,
+                                            },
+                                        ],
+                                    }}
+                                    trigger={["click"]}
+                                >
+                                    <Button
+                                        size="small"
+                                        icon={<DownloadOutlined />}
+                                        disabled={allRows.length === 0}
+                                    />
+                                </Dropdown>
+                            </div>
+                        </Col>
                     </Row>
-                </div>
-
-                <div
-                    style={{
-                        display: "flex",
-                        gap: "12px",
-                        alignItems: "flex-end",
-                        flexWrap: "wrap",
-                        marginBottom: "8px",
-                    }}
-                >
-                    <div style={{ minWidth: "220px", flex: 1 }}>
-                        <Text
-                            strong
-                            style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}
-                        >
-                            Quarters
-                        </Text>
-                        <Select
-                            mode="multiple"
-                            placeholder="Select quarters"
-                            value={selectedQuarters}
-                            options={quarterOptions}
-                            maxTagCount="responsive"
-                            style={{ width: "100%" }}
-                            onChange={(values) =>
-                                setSelectedQuarters(orderSelectedQuarters(values as QuarterKey[]))
-                            }
-                        />
-                    </div>
-                    <div style={{ minWidth: "240px", flex: 1 }}>
-                        <div style={{ minHeight: "56px" }} />
-                    </div>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                    <Dropdown
-                        menu={{
-                            items: [
-                                { key: "pdf", label: "PDF", onClick: handlePdfExport },
-                                { key: "excel", label: "Excel", onClick: handleExcelExport },
-                            ],
-                        }}
-                        trigger={["click"]}
-                    >
-                        <Button
-                            size="small"
-                            icon={<DownloadOutlined />}
-                            disabled={allRows.length === 0}
-                        />
-                    </Dropdown>
                 </div>
 
                 {!selectedFinancialYear || selectedQuarters.length === 0 ? (
@@ -621,7 +527,7 @@ function Component() {
                                 size="small"
                                 tableLayout="auto"
                                 dataSource={pagedRows}
-                                columns={columns}
+                                columns={programmeColumns}
                                 loading={reportRowsQuery.isFetching}
                                 pagination={false}
                                 sticky
@@ -632,47 +538,52 @@ function Component() {
                                         setExpandedRowKeys(keys),
                                     expandedRowRender: (record) => (
                                         <Table
-                                            className="reporting-rates-expanded-table"
                                             rowKey="key"
+                                            bordered
                                             size="small"
                                             pagination={false}
-                                            dataSource={record.assignedDataSets}
+                                            dataSource={record.programmeExpandedRows}
                                             scroll={{ x: "max-content" }}
                                             columns={[
                                                 {
-                                                    title: "Dataset",
-                                                    dataIndex: "dataSetName",
-                                                    key: "dataSetName",
-                                                    width: 260,
+                                                    title: "MDA/LG",
+                                                    dataIndex: "orgUnitName",
+                                                    key: "orgUnitName",
+                                                    width: 240,
                                                 },
-                                                {
-                                                    title: "Reporting Cycle",
-                                                    dataIndex: "periodType",
-                                                    key: "periodType",
-                                                    width: 180,
-                                                    render: (value: string) => value || "-",
-                                                },
-                                                {
-                                                    title: "Levels",
-                                                    dataIndex: "indicatorGroupTypeLabel",
-                                                    key: "indicatorGroupTypeLabel",
-                                                    width: 260,
-                                                    render: (value: string) => value || "-",
-                                                },
-                                                {
-                                                    title: "Reported",
-                                                    dataIndex: "reported",
-                                                    key: "reported",
-                                                    align: "center",
-                                                    width: 120,
-                                                    render: (value: boolean) => (
-                                                        <Checkbox checked={value} disabled />
-                                                    ),
-                                                },
+                                                ...indicatorGroupTypes.map((type) => ({
+                                                    title: formatIndicatorGroupTypeLabel(type),
+                                                    key: type,
+                                                    width: 170,
+                                                    align: "center" as const,
+                                                    onCell: (
+                                                        expandedRow: ReportingRateProgrammeExpandedRow,
+                                                    ) => {
+                                                        const summary =
+                                                            expandedRow.indicatorGroupTypeSummaries[
+                                                                type
+                                                            ];
+                                                        return {
+                                                            style: {
+                                                                ...getSharedCellStyle(170),
+                                                                ...(summary
+                                                                    ? getBandCellStyle(
+                                                                          summary.performanceBand,
+                                                                      )
+                                                                    : {}),
+                                                            },
+                                                        };
+                                                    },
+                                                    render: (_: unknown, expandedRow: ReportingRateProgrammeExpandedRow) =>
+                                                        expandedRow
+                                                            .indicatorGroupTypeSummaries[type]
+                                                            ?.display || "-",
+                                                })),
                                             ]}
                                         />
                                     ),
-                                    rowExpandable: (record) => record.assignedDataSets.length > 0,
+                                    rowExpandable: (record) =>
+                                        record.programmeExpandedRows.length > 0,
                                 }}
                                 onRow={(record) => ({
                                     onClick: () =>
@@ -769,22 +680,22 @@ function orderSelectedQuarters(quarters: QuarterKey[]) {
     return QUARTER_KEYS.filter((quarter) => quarters.includes(quarter));
 }
 
-function getProgrammeCode(indicator: Record<string, unknown>) {
-    return String(
-        indicator.ndpProgramme ??
-            indicator["NDP Programme List"] ??
-            indicator["UBWSASWdyfi"] ??
-            indicator["Programme"] ??
-            "",
-    ).trim();
-}
-
 function formatFinancialYearLabel(financialYear: string) {
     const startYear = Number(financialYear.slice(0, 4));
     if (!Number.isFinite(startYear)) {
         return financialYear;
     }
     return `${startYear}/${startYear + 1}`;
+}
+
+function formatIndicatorGroupTypeLabel(value: string) {
+    if (value === "ndpGoal") {
+        return "Goal";
+    }
+    return value
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function getSharedCellStyle(width: number): React.CSSProperties {
@@ -852,15 +763,11 @@ function makePeriodColumn(
 }
 
 function buildSubtitle(
-    programmeName: string | undefined,
     financialYear: string | undefined,
     quarters: QuarterKey[],
     scopeLabel: string,
 ) {
     const parts = ["Reporting Rate Completeness", scopeLabel];
-    if (programmeName) {
-        parts.push(`Programme: ${programmeName}`);
-    }
     if (financialYear) {
         parts.push(`Financial Year: ${formatFinancialYearLabel(financialYear)}`);
     }

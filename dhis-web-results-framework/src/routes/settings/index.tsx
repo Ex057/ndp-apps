@@ -62,12 +62,7 @@ function Component() {
                                 });
                             }
                         }}
-                        startingYear={
-                            dayjs(
-                                record.baseline?.replace("July", "-07"),
-                                "YYYY-MM",
-                            ).year() ?? dayjs().year()
-                        }
+                        startingYear={getSafePeriodYear(record.baseline)}
                     />
                 );
             },
@@ -87,15 +82,7 @@ function Component() {
                                 });
                             }
                         }}
-                        startingYear={
-                            dayjs(
-                                record.financialYears
-                                    ?.at(-1)
-                                    ?.replace("July", "-07") ??
-                                    dayjs().add(4, "year"),
-                                "YYYY-MM",
-                            ).year() ?? dayjs().year()
-                        }
+                        startingYear={getSafePeriodYear(record.financialYears?.at(-1))}
                         multiple
                     />
                 );
@@ -117,15 +104,9 @@ function Component() {
                                 });
                             }
                         }}
-                        startingYear={
-                            dayjs(
-                                record.activeFinancialYears
-                                    ?.at(-1)
-                                    ?.replace("July", "-07") ??
-                                    dayjs().add(4, "year"),
-                                "YYYY-MM",
-                            ).year() ?? dayjs().year()
-                        }
+                        startingYear={getSafePeriodYear(
+                            record.activeFinancialYears?.at(-1),
+                        )}
                         multiple
                     />
                 );
@@ -178,4 +159,13 @@ function Component() {
             />
         </Flex>
     );
+}
+
+function getSafePeriodYear(period: string | undefined) {
+    if (!period) {
+        return dayjs().year();
+    }
+
+    const parsed = dayjs(period.replace("July", "-07"), "YYYY-MM", true);
+    return parsed.isValid() ? parsed.year() : dayjs().year();
 }

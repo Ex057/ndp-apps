@@ -3,7 +3,10 @@ import { Col, Flex, Form, Row, Select, Typography } from "antd";
 import React from "react";
 import PerformanceLegend from "../../../../components/performance-legend";
 import { ProgramReportSchema } from "../../../../types";
-import { performanceLegendItems } from "../../../../utils";
+import {
+    getDefaultPeriods,
+    performanceLegendItems,
+} from "../../../../utils";
 import { NDPRoute } from "../route";
 import { RootRoute } from "../../../__root";
 import { createFixedPeriodFromPeriodId } from "@dhis2/multi-calendar-dates";
@@ -16,7 +19,7 @@ export const ProgramFlashReportRoute = createRoute({
 });
 
 function Component() {
-    const { categories, programs, configurations } = RootRoute.useLoaderData();
+    const { programs, configurations } = RootRoute.useLoaderData();
     const navigate = ProgramFlashReportRoute.useNavigate();
     const { v, pe, program } = ProgramFlashReportRoute.useSearch();
     const config = configurations[v ?? ""]["data"];
@@ -26,6 +29,34 @@ function Component() {
             periodId: year,
         }),
     );
+
+    React.useEffect(() => {
+        const defaultProgram = programs.at(0)?.code;
+        const { currentFinancialYear } = getDefaultPeriods(
+            config["financialYears"] ?? [],
+        );
+        if (!defaultProgram && !currentFinancialYear) {
+            return;
+        }
+        if (!program || !pe) {
+            navigate({
+                replace: true,
+                search: (prev) => ({
+                    ...prev,
+                    program: program || defaultProgram || "",
+                    pe: pe || currentFinancialYear,
+                }),
+            });
+        }
+    }, [config, navigate, pe, program, programs]);
+
+    const selectedProgram = programs.find(
+        ({ code }) => code === program,
+    );
+
+    if (!program || !pe) {
+        return null;
+    }
 
     return (
         <Flex
@@ -45,7 +76,7 @@ function Component() {
             >
                 <Col span={24}>
                     <Form.Item
-                        label="Vote"
+                        label="Programme"
                         layout="vertical"
                         style={{ margin: 0, padding: 5 }}
                     >
@@ -97,7 +128,7 @@ function Component() {
                 Consolidated Program Performance Report
             </Typography.Title>
             <Typography.Title level={5} style={{ margin: 0 }}>
-                {programs.find((vote) => vote.id === program)?.name}
+                {selectedProgram?.name}
             </Typography.Title>
             <PerformanceLegend legendItems={performanceLegendItems} />
             <Outlet />

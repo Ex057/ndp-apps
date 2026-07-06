@@ -81,6 +81,7 @@ export const PolicyActionSearchSchema = z
 export const ReportingRateSearchSchema = z
     .object({
         v: firstStringFromQuery,
+        view: z.enum(["vote", "programme"]).optional(),
     })
     .passthrough();
 

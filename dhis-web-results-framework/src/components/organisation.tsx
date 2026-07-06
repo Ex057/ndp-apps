@@ -30,6 +30,8 @@ export function OrgUnitSelect({
     const queryClient = useQueryClient();
     const organisationUnits = useLiveQuery(() => db.dataViewOrgUnits.toArray());
     const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+    const [isHydratingTree, setIsHydratingTree] = useState(false);
+    const hydratedRootsRef = React.useRef<Set<string>>(new Set());
 
     React.useEffect(() => {
         if (!defaultOrgUnit) return;
@@ -41,17 +43,26 @@ export function OrgUnitSelect({
     React.useEffect(() => {
         const rootOrgUnits =
             organisationUnits?.filter((orgUnit) => !orgUnit.pId) ?? [];
-        if (rootOrgUnits.length === 0) return;
+        const pendingRoots = rootOrgUnits.filter(
+            ({ id }) => !hydratedRootsRef.current.has(id),
+        );
+
+        if (pendingRoots.length === 0) {
+            return;
+        }
 
         let isCancelled = false;
+        setIsHydratingTree(true);
 
         const hydrateBranch = async (orgUnitId: string): Promise<void> => {
+            if (isCancelled) {
+                return;
+            }
+
             await queryClient.ensureQueryData(orgUnitQueryOptions(orgUnitId, engine));
             const children =
-                (await db.dataViewOrgUnits
-                    .where("pId")
-                    .equals(orgUnitId)
-                    .toArray()) ?? [];
+                (await db.dataViewOrgUnits.where("pId").equals(orgUnitId).toArray()) ??
+                [];
 
             for (const child of children) {
                 if (isCancelled || child.isLeaf) {
@@ -61,7 +72,18 @@ export function OrgUnitSelect({
             }
         };
 
-        void Promise.all(rootOrgUnits.map(({ id }) => hydrateBranch(id)));
+        void (async () => {
+            try {
+                for (const rootOrgUnit of pendingRoots) {
+                    await hydrateBranch(rootOrgUnit.id);
+                    hydratedRootsRef.current.add(rootOrgUnit.id);
+                }
+            } finally {
+                if (!isCancelled) {
+                    setIsHydratingTree(false);
+                }
+            }
+        })();
 
         return () => {
             isCancelled = true;
@@ -77,48 +99,74 @@ export function OrgUnitSelect({
     };
 
     const filteredTreeData = useMemo(() => {
-        if (!searchValue.trim()) return organisationUnits;
+        if (!organisationUnits) {
+            return organisationUnits;
+        }
+
+        const selectedIds = new Set(
+            Array.isArray(value)
+                ? value.filter(
+                      (currentValue): currentValue is string =>
+                          typeof currentValue === "string" &&
+                          currentValue.trim().length > 0,
+                  )
+                : typeof value === "string" && value.trim().length > 0
+                  ? [value]
+                  : [],
+        );
+
+        if (!searchValue.trim()) {
+            return organisationUnits;
+        }
 
         const searchLower = searchValue.toLowerCase();
         const matchingIds = new Set<string>();
-
-        // Find all nodes that match the search
-        const matchingNodes = organisationUnits?.filter((node) =>
+        const orgUnitMap = new Map(
+            organisationUnits.map((orgUnit) => [orgUnit.id, orgUnit]),
+        );
+        const matchingNodes = organisationUnits.filter((node) =>
             node.title.toLowerCase().includes(searchLower),
         );
 
-        // Add matching nodes and their ancestors/descendants
-        matchingNodes?.forEach((node) => {
-            matchingIds.add(node.id);
-
-            // Add all ancestors
-            let currentParentId = node.pId;
+        const addAncestors = (orgUnitId: string) => {
+            let currentParentId = orgUnitMap.get(orgUnitId)?.pId;
             while (currentParentId) {
                 matchingIds.add(currentParentId);
-                const parent = organisationUnits?.find(
-                    (n) => n.id === currentParentId,
-                );
-                currentParentId = parent?.pId;
+                currentParentId = orgUnitMap.get(currentParentId)?.pId;
             }
+        };
 
-            // Add all descendants
-            const addDescendants = (parentId: string) => {
-                const children = organisationUnits?.filter(
-                    (n) => n.pId === parentId,
-                );
-                children?.forEach((child) => {
-                    matchingIds.add(child.id);
-                    addDescendants(child.id);
-                });
-            };
+        const addDescendants = (parentId: string) => {
+            const children = organisationUnits.filter((node) => node.pId === parentId);
+            children.forEach((child) => {
+                matchingIds.add(child.id);
+                addDescendants(child.id);
+            });
+        };
+
+        matchingNodes.forEach((node) => {
+            matchingIds.add(node.id);
+            addAncestors(node.id);
             addDescendants(node.id);
         });
 
-        return organisationUnits?.filter((node) => matchingIds.has(node.id));
-    }, [searchValue, organisationUnits]);
+        selectedIds.forEach((selectedId) => {
+            if (orgUnitMap.has(selectedId)) {
+                matchingIds.add(selectedId);
+                addAncestors(selectedId);
+            }
+        });
+
+        return organisationUnits.filter((node) => matchingIds.has(node.id));
+    }, [organisationUnits, searchValue, value]);
 
     const handleSearch = (value: string): void => {
         setSearchValue(value);
+    };
+
+    const handleChange = (newValue: string | string[] | undefined) => {
+        setSearchValue("");
+        onChange(newValue);
     };
 
     const autoExpandedKeys = useMemo(() => {
@@ -144,7 +192,7 @@ export function OrgUnitSelect({
             style={{ width: "100%", flex: 1 }}
             value={value}
             placeholder="Please select"
-            onChange={onChange}
+            onChange={handleChange}
             loadData={onLoadData}
             treeData={orderBy(filteredTreeData, "title", "asc")}
             treeExpandedKeys={autoExpandedKeys}
@@ -152,7 +200,9 @@ export function OrgUnitSelect({
             multiple={isMulti}
             filterTreeNode={false}
             onSearch={handleSearch}
+            treeNodeLabelProp="title"
             treeDefaultExpandAll={Boolean(searchValue.trim())}
+            loading={isHydratingTree}
         />
     );
 

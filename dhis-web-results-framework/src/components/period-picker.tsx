@@ -22,6 +22,14 @@ export default function PeriodPicker({
         period,
     );
 
+    React.useEffect(() => {
+        setYear(startingYear);
+    }, [startingYear]);
+
+    React.useEffect(() => {
+        setCurrent(period);
+    }, [period]);
+
     const availableFixedPeriods = useMemo(() => {
         return generateFixedPeriods({
             year,
@@ -29,7 +37,7 @@ export default function PeriodPicker({
             periodType,
             locale: "en",
         }).map(({ name, id }) => ({ label: name, value: id }));
-    }, [year]);
+    }, [periodType, year]);
 
     if (multiple) {
         return (

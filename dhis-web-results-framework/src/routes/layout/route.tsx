@@ -343,6 +343,35 @@ function Component() {
                         {
                             title: (
                                 <Link
+                                    to="/ndp/programme-reporting-rate-completeness"
+                                    search={() => ({
+                                        ou,
+                                        v,
+                                        pe: currentFinancialYear,
+                                    })}
+                                    activeProps={{
+                                        style: {
+                                            color: "white",
+                                        },
+                                    }}
+                                    activeOptions={{
+                                        exact: true,
+                                        includeHash: false,
+                                        includeSearch: false,
+                                    }}
+                                    style={{
+                                        color: "#2B6998",
+                                        whiteSpace: "nowrap",
+                                    }}
+                                >
+                                    Reporting Rate Completeness
+                                </Link>
+                            ),
+                            key: "/ndp/programme-reporting-rate-completeness",
+                        },
+                        {
+                            title: (
+                                <Link
                                     to="/ndp/sub-program-actions"
                                     search={(prev) => ({
                                         ...prev,
@@ -520,6 +549,7 @@ function Component() {
                                         ou: votes[0].id,
                                         v,
                                         pe: currentFinancialYear,
+                                        view: "vote",
                                     })}
                                     activeProps={{
                                         style: {
@@ -536,7 +566,7 @@ function Component() {
                                         whiteSpace: "nowrap",
                                     }}
                                 >
-                                    Reporting Rate Summaries
+                                    Reporting Rate Completeness
                                 </Link>
                             ),
                             key: "/ndp/reporting-rates",
@@ -833,101 +863,7 @@ function Component() {
                     key: "/ndp/indicator-dictionaries",
                     // to: "/ndp/indicator-dictionaries",
                 },
-                {
-                    title: (
-                        <Link
-                            to="/ndp/workflows"
-                            search={(prev) => ({
-                                ...prev,
-                                ou,
-                                v,
-
-                                deg: "All",
-                            })}
-                            activeProps={{
-                                style: {
-                                    color: "white",
-                                },
-                            }}
-                            activeOptions={{
-                                exact: true,
-                                includeHash: false,
-                                includeSearch: false,
-                            }}
-                            style={{
-                                color: "#2B6998",
-                                whiteSpace: "nowrap",
-                            }}
-                        >
-                            Workflow & Guidelines
-                        </Link>
-                    ),
-                    key: "/ndp/workflows",
-                    // to: "/ndp/workflows",
-                },
-                {
-                    title: (
-                        <Link
-                            to="/ndp/faqs"
-                            search={(prev) => ({
-                                ...prev,
-                                ou,
-                                v,
-
-                                deg: "All",
-                            })}
-                            activeProps={{
-                                style: {
-                                    color: "white",
-                                },
-                            }}
-                            activeOptions={{
-                                exact: true,
-                                includeHash: false,
-                                includeSearch: false,
-                            }}
-                            style={{
-                                color: "#2B6998",
-                                whiteSpace: "nowrap",
-                            }}
-                        >
-                            FAQs
-                        </Link>
-                    ),
-                    key: "/ndp/faqs",
-                },
             ],
-        },
-        {
-            title: (
-                <Link
-                    to="/ndp/libraries"
-                    search={(prev) => ({
-                        ...prev,
-                        ou,
-                        v,
-
-                        deg: "All",
-                    })}
-                    activeProps={{
-                        style: {
-                            color: "white",
-                        },
-                    }}
-                    activeOptions={{
-                        exact: true,
-                        includeHash: false,
-                        includeSearch: false,
-                    }}
-                    style={{
-                        color: "#2B6998",
-                        whiteSpace: "nowrap",
-                    }}
-                >
-                    Library
-                </Link>
-            ),
-            key: "/ndp/libraries",
         },
     ];
 

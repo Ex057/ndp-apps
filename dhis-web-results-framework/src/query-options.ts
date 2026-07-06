@@ -1862,12 +1862,24 @@ export type ReportingRateSummaryExpandedRow = {
     reported: boolean;
 };
 
-export type ReportingRateSummaryRow = {
+export type ReportingRateProgrammeExpandedRow = {
     key: string;
     orgUnitId: string;
     orgUnitName: string;
     assignedDataSetCount: number;
+    indicatorGroupTypeSummaries: Record<
+        string,
+        ReportingRateSummaryPeriodSummary
+    >;
+};
+
+export type ReportingRateSummaryRow = {
+    key: string;
+    entityId: string;
+    entityName: string;
+    assignedDataSetCount: number;
     assignedDataSets: ReportingRateSummaryExpandedRow[];
+    programmeExpandedRows: ReportingRateProgrammeExpandedRow[];
     periodSummaries: Record<
         "Q1" | "Q2" | "Q3" | "Q4" | "financialYear",
         ReportingRateSummaryPeriodSummary
@@ -2636,24 +2648,30 @@ export const reportingRateSummariesQueryOptions = ({
     engine,
     ndpVersion,
     programme,
+    programmes,
     orgUnitId,
     defaultOrgUnitId,
     financialYear,
     quarters,
+    view = "vote",
 }: {
     engine: ReturnType<typeof useDataEngine>;
     ndpVersion: string;
     programme?: string;
+    programmes: Array<{ code: string; name: string }>;
     orgUnitId?: string;
     defaultOrgUnitId?: string;
     financialYear?: string;
     quarters: Array<"Q1" | "Q2" | "Q3" | "Q4">;
+    view?: "vote" | "programme";
 }) => {
     return queryOptions({
         queryKey: [
             "reporting-rate-summaries-v2",
             ndpVersion,
             programme ?? "",
+            view,
+            programmes.map((programme) => programme.code).join(","),
             orgUnitId ?? "",
             defaultOrgUnitId ?? "",
             financialYear ?? "",
@@ -2677,35 +2695,43 @@ export const reportingRateSummariesQueryOptions = ({
             );
 
             const eligibleDataElements = dataElements.filter((de) => {
-                const programmeCode = getReportingRateProgrammeCode(de);
-
-                if (programme && programmeCode !== programme) {
+                const indicatorGroupType =
+                    normalizeReportingRateIndicatorGroupType(de);
+                if (!indicatorGroupType) {
                     return false;
                 }
-
-                return normalizeReportingRateIndicatorGroupType(de) !== undefined;
+                if (programme) {
+                    return getReportingRateProgrammeCode(de) === programme;
+                }
+                return true;
             });
 
             const scopeRootOrgUnitId =
-                orgUnitId || defaultOrgUnitId || getScopeRootOrgUnitIdFromDataElements(eligibleDataElements);
+                orgUnitId ||
+                defaultOrgUnitId ||
+                getScopeRootOrgUnitIdFromDataElements(eligibleDataElements);
 
             if (!scopeRootOrgUnitId) {
                 return [];
             }
 
-            const datasetTypeLookup = buildReportingRateDatasetTypeLookup(
+            const datasetMetadataLookup = buildReportingRateDatasetMetadataLookup(
                 eligibleDataElements,
                 scopeRootOrgUnitId,
                 ndpVersion,
             );
-            const assignmentsByOrgUnit = buildReportingRateAssignmentsByOrgUnit(
+            const assignmentRecords = buildReportingRateAssignmentRecords(
                 eligibleDataElements,
                 scopeRootOrgUnitId,
                 ndpVersion,
-                datasetTypeLookup,
+                datasetMetadataLookup,
             );
 
-            if (assignmentsByOrgUnit.size === 0) {
+            const quarterlyAssignmentRecords = assignmentRecords.filter((record) =>
+                record.periodType.trim().toLowerCase().includes("quarter"),
+            );
+
+            if (quarterlyAssignmentRecords.length === 0) {
                 return [];
             }
 
@@ -2714,19 +2740,17 @@ export const reportingRateSummariesQueryOptions = ({
                 quarters,
             );
 
-            const requestDefinitions = quarterPeriods.flatMap((period) => {
-                const dataSetIds = new Set<string>();
-                assignmentsByOrgUnit.forEach((assignment) => {
-                    assignment.quarterAssignments[period.key].forEach((dataSetId) =>
-                        dataSetIds.add(dataSetId),
-                    );
-                });
-                return Array.from(dataSetIds).map((dataSetId) => ({
+            const requestDefinitions = quarterPeriods.flatMap((period) =>
+                Array.from(
+                    new Set(
+                        quarterlyAssignmentRecords.map((record) => record.dataSetId),
+                    ),
+                ).map((dataSetId) => ({
                     dataSetId,
                     periodKey: period.key,
                     period: period.period,
-                }));
-            });
+                })),
+            );
 
             const settledResponses = await Promise.allSettled(
                 requestDefinitions.map((request) =>
@@ -2774,13 +2798,11 @@ export const reportingRateSummariesQueryOptions = ({
                             ? registration.organisationUnit
                             : registration.organisationUnit?.id;
                     const registrationOrgUnitId = String(organisationUnit ?? "");
-                    const assignment = assignmentsByOrgUnit.get(registrationOrgUnitId);
-                    if (
-                        !assignment ||
-                        !assignment.quarterAssignments[request.periodKey].has(
-                            request.dataSetId,
-                        )
-                    ) {
+                    const assignmentKey = `${registrationOrgUnitId}:${request.dataSetId}`;
+                    const matchedRecord = quarterlyAssignmentRecords.find(
+                        (record) => record.assignmentKey === assignmentKey,
+                    );
+                    if (!matchedRecord) {
                         return;
                     }
 
@@ -2792,73 +2814,20 @@ export const reportingRateSummariesQueryOptions = ({
                 });
             });
 
-            return orderBy(
-                Array.from(assignmentsByOrgUnit.entries())
-                    .map(([currentOrgUnitId, assignment]) => {
-                        const completedPeriods =
-                            completedByOrgUnit.get(currentOrgUnitId) ??
-                            createReportingRateQuarterAssignmentMap();
-                        const quarterSummaries = Object.fromEntries(
-                            quarterKeys.map((quarter) => {
-                                const denominator =
-                                    assignment.quarterAssignments[quarter].size;
-                                const numerator = completedPeriods[quarter].size;
-                                return [
-                                    quarter,
-                                    createReportingRatePeriodSummary(
-                                        numerator,
-                                        denominator,
-                                    ),
-                                ];
-                            }),
-                        ) as Record<QuarterKey, ReportingRateSummaryPeriodSummary>;
+            if (view === "programme") {
+                return buildProgrammeReportingRateRows({
+                    assignmentRecords: quarterlyAssignmentRecords,
+                    completedByOrgUnit,
+                    programmes,
+                    quarters,
+                });
+            }
 
-                        const assignedDataSets = orderBy(
-                            Array.from(assignment.dataSets.values()).map((dataSet) => ({
-                                key: `${currentOrgUnitId}-${dataSet.dataSetId}`,
-                                dataSetId: dataSet.dataSetId,
-                                dataSetName: dataSet.dataSetName,
-                                periodType: dataSet.periodType,
-                                indicatorGroupType: dataSet.indicatorGroupType,
-                                indicatorGroupTypeLabel:
-                                    formatReportingRateIndicatorGroupType(
-                                        dataSet.indicatorGroupType,
-                                    ),
-                                reported: quarters.some((quarter) =>
-                                    completedPeriods[quarter].has(dataSet.dataSetId),
-                                ),
-                            })),
-                            ["dataSetName"],
-                            ["asc"],
-                        );
-
-                        return {
-                            key: currentOrgUnitId,
-                            orgUnitId: currentOrgUnitId,
-                            orgUnitName: assignment.orgUnitName,
-                            assignedDataSetCount:
-                                assignment.quarterCompatibleDataSetIds.size,
-                            assignedDataSets,
-                            periodSummaries: {
-                                ...quarterSummaries,
-                                financialYear: createReportingRateFinancialYearSummary(
-                                    quarters.map(
-                                        (quarter) => quarterSummaries[quarter],
-                                    ),
-                                ),
-                            },
-                        } satisfies ReportingRateSummaryRow;
-                    })
-                    .filter(
-                        (row) =>
-                            quarters.some(
-                                (quarter) =>
-                                    row.periodSummaries[quarter].denominator > 0,
-                            ) && row.assignedDataSetCount > 0,
-                    ),
-                ["orgUnitName"],
-                ["asc"],
-            );
+            return buildVoteReportingRateRows({
+                assignmentRecords: quarterlyAssignmentRecords,
+                completedByOrgUnit,
+                quarters,
+            });
         },
     });
 };
@@ -3171,7 +3140,10 @@ function normalizeReportingRateIndicatorGroupType(
             indicator["Indicator Group Type"] ??
             "",
     ).trim();
-    return candidate || undefined;
+    if (!candidate) {
+        return undefined;
+    }
+    return candidate.toLowerCase() === "action" ? undefined : candidate;
 }
 
 function getReportingRateProgrammeCode(dataElement: Record<string, unknown>) {
@@ -3194,6 +3166,17 @@ function formatReportingRateIndicatorGroupType(value: string) {
         .replace(/[_-]+/g, " ")
         .replace(/\b\w/g, (character) => character.toUpperCase());
 }
+
+type ReportingRateAssignmentRecord = {
+    assignmentKey: string;
+    orgUnitId: string;
+    orgUnitName: string;
+    dataSetId: string;
+    dataSetName: string;
+    periodType: string;
+    indicatorGroupType: string;
+    programmeCode: string;
+};
 
 function matchesReportingRateAssignmentNdpVersion(
     assignment: Record<string, unknown>,
@@ -3235,12 +3218,23 @@ function getScopeRootOrgUnitIdFromDataElements(
     return undefined;
 }
 
-function buildReportingRateDatasetTypeLookup(
+function buildReportingRateDatasetMetadataLookup(
     dataElements: Array<Record<string, unknown>>,
     scopeRootOrgUnitId: string | undefined,
     ndpVersion: string,
 ) {
-    const countsByAssignment = new Map<string, Map<string, number>>();
+    const metadataByAssignment = new Map<
+        string,
+        {
+            indicatorTypeCounts: Map<string, number>;
+            programmeCodeCounts: Map<string, number>;
+            dataSetName: string;
+            periodType: string;
+            orgUnitId: string;
+            orgUnitName: string;
+            dataSetId: string;
+        }
+    >();
 
     dataElements.forEach((dataElement) => {
         const indicatorGroupType =
@@ -3272,67 +3266,91 @@ function buildReportingRateDatasetTypeLookup(
             }
 
             const key = `${orgUnitId}:${dataSetId}`;
-            const counts = countsByAssignment.get(key) ?? new Map<string, number>();
-            counts.set(
+            const current = metadataByAssignment.get(key) ?? {
+                indicatorTypeCounts: new Map<string, number>(),
+                programmeCodeCounts: new Map<string, number>(),
+                dataSetName: String(assignment.dataSetName ?? dataSetId),
+                periodType: String(assignment.periodType ?? ""),
+                orgUnitId,
+                orgUnitName: String(
+                    assignment.orgUnitName ?? assignment.orgUnitCode ?? orgUnitId,
+                ),
+                dataSetId,
+            };
+            current.indicatorTypeCounts.set(
                 indicatorGroupType,
-                (counts.get(indicatorGroupType) ?? 0) + 1,
+                (current.indicatorTypeCounts.get(indicatorGroupType) ?? 0) + 1,
             );
-            countsByAssignment.set(key, counts);
+            const programmeCode = getReportingRateProgrammeCode(dataElement);
+            if (programmeCode) {
+                current.programmeCodeCounts.set(
+                    programmeCode,
+                    (current.programmeCodeCounts.get(programmeCode) ?? 0) + 1,
+                );
+            }
+            metadataByAssignment.set(key, current);
         });
     });
 
-    const canonicalTypes = new Map<string, string>();
-    countsByAssignment.forEach((counts, key) => {
-        const canonical = Array.from(counts.entries()).sort((a, b) => {
+    const canonicalMetadata = new Map<
+        string,
+        Omit<ReportingRateAssignmentRecord, "assignmentKey">
+    >();
+
+    metadataByAssignment.forEach((metadata, key) => {
+        const indicatorGroupType = Array.from(
+            metadata.indicatorTypeCounts.entries(),
+        ).sort((a, b) => {
             if (b[1] !== a[1]) {
                 return b[1] - a[1];
             }
             return a[0].localeCompare(b[0]);
         })[0]?.[0];
-        if (canonical) {
-            canonicalTypes.set(key, canonical);
+        const programmeCode = Array.from(
+            metadata.programmeCodeCounts.entries(),
+        ).sort((a, b) => {
+            if (b[1] !== a[1]) {
+                return b[1] - a[1];
+            }
+            return a[0].localeCompare(b[0]);
+        })[0]?.[0];
+        if (!indicatorGroupType || !programmeCode) {
+            return;
         }
+        canonicalMetadata.set(key, {
+            orgUnitId: metadata.orgUnitId,
+            orgUnitName: metadata.orgUnitName,
+            dataSetId: metadata.dataSetId,
+            dataSetName: metadata.dataSetName,
+            periodType: metadata.periodType,
+            indicatorGroupType,
+            programmeCode,
+        });
     });
 
-    return canonicalTypes;
+    return canonicalMetadata;
 }
 
-function buildReportingRateAssignmentsByOrgUnit(
+function buildReportingRateAssignmentRecords(
     dataElements: Array<Record<string, unknown>>,
     scopeRootOrgUnitId: string | undefined,
     ndpVersion: string,
-    datasetTypeLookup: Map<string, string>,
-) {
-    const quarterKeys = ["Q1", "Q2", "Q3", "Q4"] as const;
-    const assignmentsByOrgUnit = new Map<
+    datasetMetadataLookup: Map<
         string,
-        {
-            orgUnitName: string;
-            allAssignedDataSetIds: Set<string>;
-            quarterAssignments: Record<(typeof quarterKeys)[number], Set<string>>;
-            dataSets: Map<
-                string,
-                {
-                    dataSetId: string;
-                    dataSetName: string;
-                    periodType: string;
-                    indicatorGroupType: string;
-                }
-            >;
-            quarterCompatibleDataSetIds: Set<string>;
-        }
-    >();
+        Omit<ReportingRateAssignmentRecord, "assignmentKey">
+    >,
+) {
+    const assignmentRecords = new Map<string, ReportingRateAssignmentRecord>();
 
     dataElements.forEach((dataElement) => {
-        const assignments = Array.isArray(dataElement.datasetAssignments)
+        const dataElementAssignments = Array.isArray(dataElement.datasetAssignments)
             ? dataElement.datasetAssignments
             : [];
 
-        assignments.forEach((assignment) => {
+        dataElementAssignments.forEach((assignment) => {
             const path = String(assignment.path ?? "");
             const currentOrgUnitId = String(assignment.orgUnitId ?? "");
             const dataSetId = String(assignment.dataSetId ?? "");
-            const periodType = String(assignment.periodType ?? "");
 
             if (!currentOrgUnitId || !dataSetId) {
                 return;
@@ -3347,47 +3365,229 @@ function buildReportingRateAssignmentsByOrgUnit(
                 return;
             }
 
-            const indicatorGroupType = datasetTypeLookup.get(
+            const metadata = datasetMetadataLookup.get(
                 `${currentOrgUnitId}:${dataSetId}`,
             );
-            if (!indicatorGroupType) {
+            if (!metadata) {
                 return;
             }
 
-            const current = assignmentsByOrgUnit.get(currentOrgUnitId) ?? {
-                orgUnitName: String(
-                    assignment.orgUnitName ??
-                        assignment.orgUnitCode ??
-                        currentOrgUnitId,
-                ),
-                allAssignedDataSetIds: new Set<string>(),
-                quarterAssignments: createReportingRateQuarterAssignmentMap(),
-                dataSets: new Map(),
-                quarterCompatibleDataSetIds: new Set<string>(),
-            };
-
-            current.allAssignedDataSetIds.add(dataSetId);
-            if (periodType.trim().toLowerCase().includes("quarter")) {
-                current.quarterCompatibleDataSetIds.add(dataSetId);
-                quarterKeys.forEach((quarter) => {
-                    current.quarterAssignments[quarter].add(dataSetId);
-                });
-            }
-
-            if (!current.dataSets.has(dataSetId)) {
-                current.dataSets.set(dataSetId, {
-                    dataSetId,
-                    dataSetName: String(assignment.dataSetName ?? dataSetId),
-                    periodType,
-                    indicatorGroupType,
-                });
-            }
-
-            assignmentsByOrgUnit.set(currentOrgUnitId, current);
+            assignmentRecords.set(`${currentOrgUnitId}:${dataSetId}`, {
+                assignmentKey: `${currentOrgUnitId}:${dataSetId}`,
+                ...metadata,
+            });
         });
     });
 
-    return assignmentsByOrgUnit;
+    return Array.from(assignmentRecords.values());
+}
+
+function buildVoteReportingRateRows({
+    assignmentRecords,
+    completedByOrgUnit,
+    quarters,
+}: {
+    assignmentRecords: ReportingRateAssignmentRecord[];
+    completedByOrgUnit: Map<string, Record<"Q1" | "Q2" | "Q3" | "Q4", Set<string>>>;
+    quarters: Array<"Q1" | "Q2" | "Q3" | "Q4">;
+}) {
+    return orderBy(
+        Object.entries(groupBy(assignmentRecords, "orgUnitId"))
+            .map(([orgUnitId, records]) => {
+                const completedPeriods =
+                    completedByOrgUnit.get(orgUnitId) ??
+                    createReportingRateQuarterAssignmentMap();
+                const quarterSummaries = buildReportingRateQuarterSummaries(
+                    records,
+                    completedPeriods,
+                );
+
+                return {
+                    key: orgUnitId,
+                    entityId: orgUnitId,
+                    entityName: records[0]?.orgUnitName ?? orgUnitId,
+                    assignedDataSetCount: getUniqueAssignmentDataSetCount(records),
+                    assignedDataSets: orderBy(
+                        records.map((record) => ({
+                            key: record.assignmentKey,
+                            dataSetId: record.dataSetId,
+                            dataSetName: record.dataSetName,
+                            periodType: record.periodType,
+                            indicatorGroupType: record.indicatorGroupType,
+                            indicatorGroupTypeLabel:
+                                formatReportingRateIndicatorGroupType(
+                                    record.indicatorGroupType,
+                                ),
+                            reported: quarters.some((quarter) =>
+                                completedPeriods[quarter].has(record.dataSetId),
+                            ),
+                        })),
+                        ["dataSetName"],
+                        ["asc"],
+                    ),
+                    programmeExpandedRows: [],
+                    periodSummaries: {
+                        ...quarterSummaries,
+                        financialYear: createReportingRateFinancialYearSummary(
+                            quarters.map((quarter) => quarterSummaries[quarter]),
+                        ),
+                    },
+                } satisfies ReportingRateSummaryRow;
+            })
+            .filter(
+                (row) =>
+                    quarters.some(
+                        (quarter) => row.periodSummaries[quarter].denominator > 0,
+                    ) && row.assignedDataSetCount > 0,
+            ),
+        ["entityName"],
+        ["asc"],
+    );
+}
+
+function buildProgrammeReportingRateRows({
+    assignmentRecords,
+    completedByOrgUnit,
+    programmes,
+    quarters,
+}: {
+    assignmentRecords: ReportingRateAssignmentRecord[];
+    completedByOrgUnit: Map<string, Record<"Q1" | "Q2" | "Q3" | "Q4", Set<string>>>;
+    programmes: Array<{ code: string; name: string }>;
+    quarters: Array<"Q1" | "Q2" | "Q3" | "Q4">;
+}) {
+    const programmeNames = new Map(
+        programmes.map((programme) => [programme.code, programme.name]),
+    );
+
+    return orderBy(
+        Object.entries(groupBy(assignmentRecords, "programmeCode"))
+            .map(([programmeCode, records]) => {
+                const quarterSummaries = buildAggregatedReportingRateQuarterSummaries(
+                    records,
+                    completedByOrgUnit,
+                );
+
+                const programmeExpandedRows = orderBy(
+                    Object.entries(groupBy(records, "orgUnitId"))
+                        .map(([orgUnitId, orgUnitRecords]) => {
+                            const summariesByType = Object.fromEntries(
+                                Object.entries(
+                                    groupBy(orgUnitRecords, "indicatorGroupType"),
+                                ).map(([indicatorGroupType, typeRecords]) => {
+                                    const quarterSummariesByType =
+                                        buildAggregatedReportingRateQuarterSummaries(
+                                            typeRecords,
+                                            completedByOrgUnit,
+                                        );
+                                    return [
+                                        indicatorGroupType,
+                                        createReportingRateFinancialYearSummary(
+                                            quarters.map(
+                                                (quarter) =>
+                                                    quarterSummariesByType[quarter],
+                                            ),
+                                        ),
+                                    ];
+                                }),
+                            ) as Record<
+                                string,
+                                ReportingRateSummaryPeriodSummary
+                            >;
+
+                            return {
+                                key: `${programmeCode}-${orgUnitId}`,
+                                orgUnitId,
+                                orgUnitName:
+                                    orgUnitRecords[0]?.orgUnitName ?? orgUnitId,
+                                assignedDataSetCount:
+                                    getUniqueAssignmentDataSetCount(orgUnitRecords),
+                                indicatorGroupTypeSummaries: summariesByType,
+                            } satisfies ReportingRateProgrammeExpandedRow;
+                        })
+                        .filter((row) => row.assignedDataSetCount > 0),
+                    ["orgUnitName"],
+                    ["asc"],
+                );
+
+                return {
+                    key: programmeCode,
+                    entityId: programmeCode,
+                    entityName:
+                        programmeNames.get(programmeCode) || programmeCode,
+                    assignedDataSetCount: getUniqueAssignmentDataSetCount(records),
+                    assignedDataSets: [],
+                    programmeExpandedRows,
+                    periodSummaries: {
+                        ...quarterSummaries,
+                        financialYear: createReportingRateFinancialYearSummary(
+                            quarters.map((quarter) => quarterSummaries[quarter]),
+                        ),
+                    },
+                } satisfies ReportingRateSummaryRow;
+            })
+            .filter(
+                (row) =>
+                    quarters.some(
+                        (quarter) => row.periodSummaries[quarter].denominator > 0,
+                    ) && row.assignedDataSetCount > 0,
+            ),
+        ["entityName"],
+        ["asc"],
+    );
+}
+
+function buildReportingRateQuarterSummaries(
+    records: ReportingRateAssignmentRecord[],
+    completedPeriods: Record<"Q1" | "Q2" | "Q3" | "Q4", Set<string>>,
+) {
+    const quarterKeys = ["Q1", "Q2", "Q3", "Q4"] as const;
+
+    return Object.fromEntries(
+        quarterKeys.map((quarter) => {
+            const denominator = new Set(records.map((record) => record.dataSetId)).size;
+            const numerator = records.reduce((count, record) => {
+                return count + (completedPeriods[quarter].has(record.dataSetId) ? 1 : 0);
+            }, 0);
+            return [
+                quarter,
+                createReportingRatePeriodSummary(numerator, denominator),
+            ];
+        }),
+    ) as Record<
+        (typeof quarterKeys)[number],
+        ReportingRateSummaryPeriodSummary
+    >;
+}
+
+function buildAggregatedReportingRateQuarterSummaries(
+    records: ReportingRateAssignmentRecord[],
+    completedByOrgUnit: Map<string, Record<"Q1" | "Q2" | "Q3" | "Q4", Set<string>>>,
+) {
+    const quarterKeys = ["Q1", "Q2", "Q3", "Q4"] as const;
+
+    return Object.fromEntries(
+        quarterKeys.map((quarter) => {
+            const denominator = records.length;
+            const numerator = records.reduce((count, record) => {
+                const completedPeriods =
+                    completedByOrgUnit.get(record.orgUnitId) ??
+                    createReportingRateQuarterAssignmentMap();
+                return count + (completedPeriods[quarter].has(record.dataSetId) ? 1 : 0);
+            }, 0);
+            return [
+                quarter,
+                createReportingRatePeriodSummary(numerator, denominator),
+            ];
+        }),
+    ) as Record<
+        (typeof quarterKeys)[number],
+        ReportingRateSummaryPeriodSummary
+    >;
+}
+
+function getUniqueAssignmentDataSetCount(records: ReportingRateAssignmentRecord[]) {
+    return new Set(records.map((record) => record.assignmentKey)).size;
 }
 
 export const voteFlashQueryOptions = ({

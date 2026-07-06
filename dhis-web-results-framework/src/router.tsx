@@ -59,6 +59,8 @@ import { VoteFlashReportRoute } from "./routes/layout/ndp/vote-flash-report/rout
 import { VoteFlashReportIndexRoute } from "./routes/layout/ndp/vote-flash-report";
 import { ProgramFlashReportRoute } from "./routes/layout/ndp/program-flash-report/route";
 import { ProgramFlashReportIndexRoute } from "./routes/layout/ndp/program-flash-report";
+import { ProgrammeReportingRateCompletenessRoute } from "./routes/layout/ndp/programme-reporting-rate-completeness/route";
+import { ProgrammeReportingRateCompletenessIndexRoute } from "./routes/layout/ndp/programme-reporting-rate-completeness";
 
 const routeTree = RootRoute.addChildren([
     IndexRoute,
@@ -81,6 +83,9 @@ const routeTree = RootRoute.addChildren([
             WorkflowRoute.addChildren([WorkFlowIndexRoute]),
             ProjectPerformanceRoute.addChildren([ProjectPerformanceIndexRoute]),
             ReportingRatesRoute.addChildren([ReportingRatesIndexRoute]),
+            ProgrammeReportingRateCompletenessRoute.addChildren([
+                ProgrammeReportingRateCompletenessIndexRoute,
+            ]),
             OverallPerformanceRoute.addChildren([OverallPerformanceIndexRoute]),
             OutcomePerformanceRoute.addChildren([OutcomePerformanceIndexRoute]),
             OutputPerformanceRoute.addChildren([OutputPerformanceIndexRoute]),

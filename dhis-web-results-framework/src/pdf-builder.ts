@@ -184,6 +184,37 @@ const buildHeaderRows = (columns: any[], maxDepth: number) => {
     return headerRows;
 };
 
+const buildColumnStyles = (
+    doc: jsPDF,
+    margin: number,
+    leafColumns: any[],
+) => {
+    const columnStyles: Record<number, { cellWidth: number; halign: string }> = {};
+    const tableWidth = doc.internal.pageSize.width - margin * 2;
+    const fallbackWidth = 15;
+    const requestedWidths = leafColumns.map((col: any) =>
+        typeof col.width === "number" ? col.width / 10 : fallbackWidth,
+    );
+    const totalRequestedWidth = requestedWidths.reduce(
+        (sum, width) => sum + width,
+        0,
+    );
+    const widthScale =
+        totalRequestedWidth > 0 ? tableWidth / totalRequestedWidth : 1;
+
+    leafColumns.forEach((col: any, index: number) => {
+        columnStyles[index] = {
+            cellWidth: Math.max(
+                8,
+                Number((requestedWidths[index]! * widthScale).toFixed(2)),
+            ),
+            halign: col.align || "left",
+        };
+    });
+
+    return columnStyles;
+};
+
 interface PDFBuilderOptions {
     orientation?: "portrait" | "landscape";
     title?: string;
@@ -386,42 +417,11 @@ export class PDFBuilder {
             });
         });
 
-        // Create column definitions with widths
-        const columnStyles: any = {};
-        const tableWidth = this.doc.internal.pageSize.width - this.margin * 2;
-
-        // Calculate total width from specified columns
-        const totalSpecifiedWidth = leafColumns.reduce((sum: number, col: any) => {
-            return sum + (typeof col.width === "number" ? col.width / 10 : 0);
-        }, 0);
-
-        // Count auto-width columns
-        const autoWidthColumns = leafColumns.filter(
-            (col: any) => typeof col.width !== "number"
-        ).length;
-
-        // Calculate width for auto columns
-        const remainingWidth = Math.max(0, tableWidth - totalSpecifiedWidth);
-        const minAutoWidth = 30; // Minimum 30mm for auto-width columns
-        const autoWidth = autoWidthColumns > 0
-            ? Math.max(minAutoWidth, remainingWidth / autoWidthColumns)
-            : minAutoWidth;
-
-        leafColumns.forEach((col: any, index: number) => {
-            let width: number | "auto";
-            if (typeof col.width === "number") {
-                // Use specified width from column definition
-                width = col.width / 10; // Convert pixels to mm (rough conversion)
-            } else {
-                // Use calculated auto width with minimum guarantee
-                width = autoWidth;
-            }
-
-            columnStyles[index] = {
-                cellWidth: width,
-                halign: col.align || "left",
-            };
-        });
+        const columnStyles = buildColumnStyles(
+            this.doc,
+            this.margin,
+            leafColumns,
+        );
 
         // Generate table
         autoTable(this.doc, {
@@ -541,42 +541,11 @@ export class PDFBuilder {
             }
         });
 
-        // Create column definitions with widths
-        const columnStyles: any = {};
-        const tableWidth = this.doc.internal.pageSize.width - this.margin * 2;
-
-        // Calculate total width from specified columns
-        const totalSpecifiedWidth = leafColumns.reduce((sum: number, col: any) => {
-            return sum + (typeof col.width === "number" ? col.width / 10 : 0);
-        }, 0);
-
-        // Count auto-width columns
-        const autoWidthColumns = leafColumns.filter(
-            (col: any) => typeof col.width !== "number"
-        ).length;
-
-        // Calculate width for auto columns
-        const remainingWidth = Math.max(0, tableWidth - totalSpecifiedWidth);
-        const minAutoWidth = 30; // Minimum 30mm for auto-width columns
-        const autoWidth = autoWidthColumns > 0
-            ? Math.max(minAutoWidth, remainingWidth / autoWidthColumns)
-            : minAutoWidth;
-
-        leafColumns.forEach((col: any, index: number) => {
-            let width: number | "auto";
-            if (typeof col.width === "number") {
-                // Use specified width from column definition
-                width = col.width / 10; // Convert pixels to mm (rough conversion)
-            } else {
-                // Use calculated auto width with minimum guarantee
-                width = autoWidth;
-            }
-
-            columnStyles[index] = {
-                cellWidth: width,
-                halign: col.align || "left",
-            };
-        });
+        const columnStyles = buildColumnStyles(
+            this.doc,
+            this.margin,
+            leafColumns,
+        );
 
         // Build set of comment row indices from the mapping
         const commentRowIndices = new Set<number>();
