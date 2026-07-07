@@ -1,4 +1,5 @@
 import { DownloadOutlined } from "@ant-design/icons";
+import { createFixedPeriodFromPeriodId } from "@dhis2/multi-calendar-dates";
 import { createRoute } from "@tanstack/react-router";
 import {
     Button,
@@ -25,7 +26,6 @@ import { ProgramFlashReportRoute } from "./route";
 import { ExcelBuilder } from "../../../../excel-builder";
 import { PDFBuilder } from "../../../../pdf-builder";
 
-const quarterOrder = { Q1: "Q3", Q2: "Q4", Q3: "Q1", Q4: "Q2" } as const;
 const fullQuarters = {
     3: "Q1",
     4: "Q2",
@@ -53,6 +53,23 @@ const reportNumberFormatter = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
+const indicatorLegendItems = [
+    "A = Achieved",
+    "M = Moderately Achieved",
+    "N = Not Achieved",
+    "ND = No Data",
+    "% A = Percentage Achieved",
+    "% M = Percentage Moderately Achieved",
+    "% N = Percentage Not Achieved",
+    "% ND = Percentage No Data",
+] as const;
+const actionLegendItems = [
+    "BP = Budget Planned",
+    "BA = Budget Approved",
+    "BR = Budget Released",
+    "BS = Budget Spent",
+    "% = Percentage of Released Budget Spent",
+] as const;
 
 function getQuarterDetails(pe: string): QuarterDetail[] {
     const year = Number(pe.slice(0, 4));
@@ -61,7 +78,7 @@ function getQuarterDetails(pe: string): QuarterDetail[] {
         const period = `${currentYear}${fullQuarters[quarter]}`;
         return {
             period,
-            quarterLabel: quarterOrder[fullQuarters[quarter]],
+            quarterLabel: fullQuarters[quarter],
         };
     });
 }
@@ -105,6 +122,39 @@ function buildQuarterNarratives({
     });
 }
 
+function buildPeriodNarrative({
+    rows,
+    period,
+    voteMap,
+}: {
+    rows: AnalyticsData[];
+    period: string;
+    voteMap?: Map<string, VoteMetadata>;
+}) {
+    const comments = rows
+        .map((row) => {
+            const comment = String(row[`${period}comment`] ?? "").trim();
+            if (!comment) {
+                return undefined;
+            }
+            if (!voteMap) {
+                return comment;
+            }
+            const vote = voteMap.get(String(row.orgUnit ?? row.ou ?? ""));
+            const voteLabel =
+                vote?.name ||
+                formatVoteCode(String(vote?.code ?? "")) ||
+                String(row.orgUnit ?? row.ou ?? "");
+            return `${voteLabel}: ${comment}`;
+        })
+        .filter(
+            (comment): comment is string =>
+                typeof comment === "string" && comment.length > 0,
+        );
+
+    return Array.from(new Set(comments)).join("\r");
+}
+
 function buildNarrativeDescriptionItems(
     record: AnalyticsData,
     quarterDetails: QuarterDetail[],
@@ -141,6 +191,9 @@ function extractQuarterNarrativeText(
 
 function buildNarrativeExpandableConfig(quarterDetails: QuarterDetail[]) {
     return {
+        showExpandColumn: true,
+        columnWidth: 56,
+        expandRowByClick: true,
         expandedRowRender: (record: AnalyticsData) => (
             <Descriptions
                 size="small"
@@ -153,6 +206,35 @@ function buildNarrativeExpandableConfig(quarterDetails: QuarterDetail[]) {
                 ({ period }) =>
                     String(record[`${period}comment`] ?? "").trim().length > 0,
             ),
+    } satisfies NonNullable<TableProps<AnalyticsData>["expandable"]>;
+}
+
+function buildSummaryNarrativeExpandableConfig(periodLabel: string) {
+    return {
+        showExpandColumn: true,
+        columnWidth: 56,
+        expandRowByClick: true,
+        expandedRowRender: (record: AnalyticsData) => {
+            const comment = String(record.summaryComment ?? "").trim();
+            if (!comment) {
+                return null;
+            }
+            return (
+                <Descriptions
+                    size="small"
+                    column={1}
+                    items={[
+                        {
+                            key: `${record.key ?? record.id ?? "row"}-summary-comment`,
+                            label: periodLabel,
+                            children: comment,
+                        },
+                    ]}
+                />
+            );
+        },
+        rowExpandable: (record: AnalyticsData) =>
+            String(record.summaryComment ?? "").trim().length > 0,
     } satisfies NonNullable<TableProps<AnalyticsData>["expandable"]>;
 }
 
@@ -195,6 +277,21 @@ function getConditionalStatusColumnCellStyle(
     };
 }
 
+function renderLegendRow(items: readonly string[]) {
+    return (
+        <Typography.Title
+            level={4}
+            style={{ margin: 0, color: REPORT_COLORS.section }}
+        >
+            <Flex wrap gap={24}>
+                {items.map((item) => (
+                    <span key={item}>{item}</span>
+                ))}
+            </Flex>
+        </Typography.Title>
+    );
+}
+
 function hasProgrammePerformanceData(value: unknown) {
     return typeof value === "number" && value > 0;
 }
@@ -208,9 +305,20 @@ export const ProgramFlashReportIndexRoute = createRoute({
 
 function Component() {
     const { engine } = ProgramFlashReportRoute.useRouteContext();
-    const { categories, programs, votes, allOptionsMap, ou: defaultOrgUnit } =
-        RootRoute.useLoaderData();
+    const {
+        categories,
+        programs,
+        votes,
+        allOptionsMap,
+        configurations,
+        ou: defaultOrgUnit,
+    } = RootRoute.useLoaderData();
     const { v, pe = "", program } = ProgramFlashReportRoute.useSearch();
+    const baselinePe = configurations[v ?? ""]?.data?.baseline ?? "";
+    const summaryPeriodIds = useMemo(
+        () => Array.from(new Set([baselinePe, pe].filter(Boolean))),
+        [baselinePe, pe],
+    );
 
     const selectedProgram = programs.find(({ code }) => code === program);
     const voteMap = useMemo(
@@ -226,7 +334,7 @@ function Component() {
 
     const regularSearch = useMemo(
         () => ({
-            pe: [pe],
+            pe: summaryPeriodIds,
             ou: programmeRootOrgUnitId,
             category: "Duw5yep8Vae",
             categoryOptions: categories.get("Duw5yep8Vae") || [],
@@ -234,7 +342,7 @@ function Component() {
             program,
             requiresProgram: true,
         }),
-        [categories, pe, program, programmeRootOrgUnitId],
+        [categories, programmeRootOrgUnitId, program, summaryPeriodIds],
     );
     const budgetSearch = useMemo(
         () => ({
@@ -360,14 +468,10 @@ function Component() {
             }),
         [actions, categories, pe, voteMap],
     );
-    const previousFinancialYearLabel = useMemo(
-        () => formatFinancialYearLabel(Number(pe.slice(0, 4)) - 2),
-        [pe],
-    );
-    const currentFinancialYearLabel = useMemo(
-        () => `${formatFinancialYearLabel(Number(pe.slice(0, 4)))} - Q3`,
-        [pe],
-    );
+    const baselinePeriodLabel = useMemo(() => formatPeriodLabel(baselinePe), [
+        baselinePe,
+    ]);
+    const currentPeriodLabel = useMemo(() => formatPeriodLabel(pe), [pe]);
 
     const actionPerformanceByVoteRows = useMemo(
         () =>
@@ -397,37 +501,54 @@ function Component() {
         () =>
             buildSummaryPerformanceRows({
                 rows: outcomes,
-                pe,
+                baselinePe,
+                currentPe: pe,
+                currentPeriodLabel,
                 allOptionsMap,
                 rowType: "outcome",
-                quarterDetails,
                 voteMap,
             }),
-        [allOptionsMap, outcomes, pe, quarterDetails, voteMap],
+        [
+            allOptionsMap,
+            baselinePe,
+            currentPeriodLabel,
+            outcomes,
+            pe,
+            voteMap,
+        ],
     );
     const intermediateOutcomeSummaryRows = useMemo(
         () =>
             buildSummaryPerformanceRows({
                 rows: intermediateOutcomes,
-                pe,
+                baselinePe,
+                currentPe: pe,
+                currentPeriodLabel,
                 allOptionsMap,
                 rowType: "intermediateOutcome",
-                quarterDetails,
                 voteMap,
             }),
-        [allOptionsMap, intermediateOutcomes, pe, quarterDetails, voteMap],
+        [
+            allOptionsMap,
+            baselinePe,
+            currentPeriodLabel,
+            intermediateOutcomes,
+            pe,
+            voteMap,
+        ],
     );
     const outputSummaryRows = useMemo(
         () =>
             buildSummaryPerformanceRows({
                 rows: outputs,
-                pe,
+                baselinePe,
+                currentPe: pe,
+                currentPeriodLabel,
                 allOptionsMap,
                 rowType: "output",
-                quarterDetails,
                 voteMap,
             }),
-        [allOptionsMap, outputs, pe, quarterDetails, voteMap],
+        [allOptionsMap, baselinePe, currentPeriodLabel, outputs, pe, voteMap],
     );
     const performanceLegendColumns = useMemo(
         () => buildPerformanceLegendExportColumns(),
@@ -622,10 +743,10 @@ function Component() {
     >(
         () =>
             buildSummaryPerformanceColumns({
-                previousFinancialYearLabel,
-                currentFinancialYearLabel,
+                baselinePeriodLabel,
+                currentPeriodLabel,
             }),
-        [currentFinancialYearLabel, previousFinancialYearLabel],
+        [baselinePeriodLabel, currentPeriodLabel],
     );
 
     const actionPerformanceByVoteColumns = useMemo<
@@ -914,29 +1035,10 @@ function Component() {
         [actions, categories, pe, quarterDetails, voteMap],
     );
 
-    const allDetailedData = useMemo(
-        () => [
-            ...outcomeDetailedData,
-            ...intermediateOutcomeDetailedData,
-            ...outputDetailedData,
-            ...actionDetailedData,
-        ],
-        [
-            actionDetailedData,
-            intermediateOutcomeDetailedData,
-            outcomeDetailedData,
-            outputDetailedData,
-        ],
-    );
     const extractOutcomeComments = useCallback(
         (record: AnalyticsData) =>
             extractQuarterNarrativeText(record, quarterDetails),
         [quarterDetails],
-    );
-
-    const executiveSummary = useMemo(
-        () => buildExecutiveSummarySections(allDetailedData, quarterDetails),
-        [allDetailedData, quarterDetails],
     );
 
     const outcomeTableProps = useMemo(
@@ -984,20 +1086,20 @@ function Component() {
             buildSummaryTableProps({
                 rows: outcomeSummaryRows,
                 columns: summaryPerformanceColumns,
-                quarterDetails,
+                periodLabel: currentPeriodLabel,
             }),
-        [outcomeSummaryRows, quarterDetails, summaryPerformanceColumns],
+        [currentPeriodLabel, outcomeSummaryRows, summaryPerformanceColumns],
     );
     const intermediateOutcomeSummaryTableProps = useMemo(
         () =>
             buildSummaryTableProps({
                 rows: intermediateOutcomeSummaryRows,
                 columns: summaryPerformanceColumns,
-                quarterDetails,
+                periodLabel: currentPeriodLabel,
             }),
         [
+            currentPeriodLabel,
             intermediateOutcomeSummaryRows,
-            quarterDetails,
             summaryPerformanceColumns,
         ],
     );
@@ -1006,9 +1108,9 @@ function Component() {
             buildSummaryTableProps({
                 rows: outputSummaryRows,
                 columns: summaryPerformanceColumns,
-                quarterDetails,
+                periodLabel: currentPeriodLabel,
             }),
-        [outputSummaryRows, quarterDetails, summaryPerformanceColumns],
+        [currentPeriodLabel, outputSummaryRows, summaryPerformanceColumns],
     );
 
     const handlePdfExport = useCallback(() => {
@@ -1035,34 +1137,38 @@ function Component() {
             .addTable(overallScorecardColumns, overallScorecardRows)
             .addSpacing(3)
             .addTitle("1.2.1 Outcome Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(indicatorPerformanceColumns, outcomePerformanceByVote)
             .addSpacing(3)
             .addTitle("1.2.1 Intermediate Outcome Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(
                 indicatorPerformanceColumns,
                 intermediateOutcomePerformanceByVote,
             )
             .addSpacing(3)
             .addTitle("1.2.2 Output Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(indicatorPerformanceColumns, outputPerformanceByVote)
             .addSpacing(3)
             .addTitle("1.2.2 Action (Budget) Performance by Vote", 3)
+            .addTitle(actionLegendItems.join(" | "), 4)
             .addTable(
                 actionPerformanceByVoteColumns,
                 actionPerformanceByVoteRows,
             )
             .addSpacing(3)
             .addTitle("1.3 Summary Performance", 2)
-            .addTitle("1.1.1 Summary Outcome Performance", 3)
+            .addTitle("1.3.1 Summary Outcome Performance", 3)
             .addTable(summaryPerformanceColumns, outcomeSummaryRows)
             .addSpacing(3)
-            .addTitle("1.1.1 Summary Intermediate Outcome Performance", 3)
+            .addTitle("1.3.2 Summary Intermediate Outcome Performance", 3)
             .addTable(summaryPerformanceColumns, intermediateOutcomeSummaryRows)
             .addSpacing(3)
-            .addTitle("1.1.1 Summary Output Performance", 3)
+            .addTitle("1.3.3 Summary Output Performance", 3)
             .addTable(summaryPerformanceColumns, outputSummaryRows)
             .addSpacing(3)
-            .addTitle("1.1.2 Summary Actions (Budget) Performance Scorecard", 3)
+            .addTitle("1.3.4 Summary Actions (Budget) Performance Scorecard", 3)
             .addTable(budgetScorecardColumns, budgetScorecardRows)
             .addSpacing(3)
             .addTitle("SECTION 3.0: DETAILED PERFORMANCE", 1)
@@ -1097,14 +1203,6 @@ function Component() {
                 actionDetailedData,
                 extractOutcomeComments,
             )
-            .addSpacing(3)
-            .addTitle("SECTION 2.0 EXECUTIVE SUMMARY", 1)
-            .addTitle("2.1 Overview of Programme Performance", 2)
-            .addText(executiveSummary.overview, { italic: false })
-            .addTitle("2.2 Challenges and Recommendations", 2)
-            .addText(executiveSummary.challengesAndRecommendations, {
-                italic: false,
-            })
             .download("Program_Flash_Report.pdf");
     }, [
         actionPerformanceByVoteColumns,
@@ -1113,7 +1211,6 @@ function Component() {
         actionDetailedData,
         budgetScorecardColumns,
         budgetScorecardRows,
-        executiveSummary,
         extractOutcomeComments,
         indicatorPerformanceColumns,
         measurementGuideColumns,
@@ -1157,34 +1254,38 @@ function Component() {
             .addTable(overallScorecardColumns, overallScorecardRows)
             .addSpacer(3)
             .addTitle("1.2.1 Outcome Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(indicatorPerformanceColumns, outcomePerformanceByVote)
             .addSpacer(3)
             .addTitle("1.2.1 Intermediate Outcome Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(
                 indicatorPerformanceColumns,
                 intermediateOutcomePerformanceByVote,
             )
             .addSpacer(3)
             .addTitle("1.2.2 Output Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(indicatorPerformanceColumns, outputPerformanceByVote)
             .addSpacer(3)
             .addTitle("1.2.2 Action (Budget) Performance by Vote", 3)
+            .addTitle(actionLegendItems.join(" | "), 4)
             .addTable(
                 actionPerformanceByVoteColumns,
                 actionPerformanceByVoteRows,
             )
             .addSpacer(3)
             .addTitle("1.3 Summary Performance", 2)
-            .addTitle("1.1.1 Summary Outcome Performance", 3)
+            .addTitle("1.3.1 Summary Outcome Performance", 3)
             .addTable(summaryPerformanceColumns, outcomeSummaryRows)
             .addSpacer(3)
-            .addTitle("1.1.1 Summary Intermediate Outcome Performance", 3)
+            .addTitle("1.3.2 Summary Intermediate Outcome Performance", 3)
             .addTable(summaryPerformanceColumns, intermediateOutcomeSummaryRows)
             .addSpacer(3)
-            .addTitle("1.1.1 Summary Output Performance", 3)
+            .addTitle("1.3.3 Summary Output Performance", 3)
             .addTable(summaryPerformanceColumns, outputSummaryRows)
             .addSpacer(3)
-            .addTitle("1.1.2 Summary Actions (Budget) Performance Scorecard", 3)
+            .addTitle("1.3.4 Summary Actions (Budget) Performance Scorecard", 3)
             .addTable(budgetScorecardColumns, budgetScorecardRows)
             .addSpacer(3)
             .addTitle("SECTION 3.0: DETAILED PERFORMANCE", 1)
@@ -1219,14 +1320,6 @@ function Component() {
                 actionDetailedData,
                 extractOutcomeComments,
             )
-            .addSpacer(3)
-            .addTitle("SECTION 2.0 EXECUTIVE SUMMARY", 1)
-            .addTitle("2.1 Overview of Programme Performance", 2)
-            .addText(executiveSummary.overview, { italic: false })
-            .addTitle("2.2 Challenges and Recommendations", 2)
-            .addText(executiveSummary.challengesAndRecommendations, {
-                italic: false,
-            })
             .download("Program_Flash_Report.xlsx");
     }, [
         actionPerformanceByVoteColumns,
@@ -1235,7 +1328,6 @@ function Component() {
         actionDetailedData,
         budgetScorecardColumns,
         budgetScorecardRows,
-        executiveSummary,
         extractOutcomeComments,
         indicatorPerformanceColumns,
         measurementGuideColumns,
@@ -1346,6 +1438,7 @@ function Component() {
             >
                 1.2.1 Outcome Performance by Vote
             </Typography.Title>
+            {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
                 columns={indicatorPerformanceColumns}
@@ -1363,6 +1456,7 @@ function Component() {
             >
                 1.2.1 Intermediate Outcome Performance by Vote
             </Typography.Title>
+            {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
                 columns={indicatorPerformanceColumns}
@@ -1380,6 +1474,7 @@ function Component() {
             >
                 1.2.2 Output Performance by Vote
             </Typography.Title>
+            {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
                 columns={indicatorPerformanceColumns}
@@ -1397,6 +1492,7 @@ function Component() {
             >
                 1.2.2 Action (Budget) Performance by Vote
             </Typography.Title>
+            {renderLegendRow(actionLegendItems)}
             <Table
                 className="programme-report-table"
                 columns={actionPerformanceByVoteColumns}
@@ -1418,7 +1514,7 @@ function Component() {
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.1.1 Summary Outcome Performance
+                1.3.1 Summary Outcome Performance
             </Typography.Title>
             <Table
                 className="programme-report-table"
@@ -1428,7 +1524,7 @@ function Component() {
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.1.1 Summary Intermediate Outcome Performance
+                1.3.2 Summary Intermediate Outcome Performance
             </Typography.Title>
             <Table
                 className="programme-report-table"
@@ -1438,7 +1534,7 @@ function Component() {
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.1.1 Summary Output Performance
+                1.3.3 Summary Output Performance
             </Typography.Title>
             <Table
                 className="programme-report-table"
@@ -1448,7 +1544,7 @@ function Component() {
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.1.2 Summary Actions (Budget) Performance Scorecard
+                1.3.4 Summary Actions (Budget) Performance Scorecard
             </Typography.Title>
             <Table
                 className="programme-report-table"
@@ -1509,36 +1605,6 @@ function Component() {
                 </Flex>
             </Typography.Title>
             <Table className="programme-report-table" {...actionTableProps} />
-            <Typography.Title
-                level={2}
-                style={{ margin: 0, color: REPORT_COLORS.section }}
-            >
-                SECTION 2.0 EXECUTIVE SUMMARY
-            </Typography.Title>
-            <Typography.Title
-                level={3}
-                style={{ margin: 0, color: REPORT_COLORS.section }}
-            >
-                2.1 Overview of Programme Performance
-            </Typography.Title>
-            <Descriptions
-                bordered
-                size="small"
-                column={1}
-                items={executiveSummary.overviewItems}
-            />
-            <Typography.Title
-                level={3}
-                style={{ margin: 0, color: REPORT_COLORS.section }}
-            >
-                2.2 Challenges and Recommendations
-            </Typography.Title>
-            <Descriptions
-                bordered
-                size="small"
-                column={1}
-                items={executiveSummary.challengeItems}
-            />
         </Flex>
     );
 }
@@ -1913,7 +1979,7 @@ function buildBudgetQuarterColumns(pe: string): NonNullable<
     return regularQuarterOrder.map((quarter) => {
         const currentYear = quarter === 1 || quarter === 2 ? year + 1 : year;
         const quarterKey = `${currentYear}Q${quarter}`;
-        const title = quarterOrder[fullQuarters[quarter]];
+        const title = fullQuarters[quarter];
         return {
             title,
             children: [
@@ -1952,11 +2018,11 @@ function buildBudgetQuarterColumns(pe: string): NonNullable<
 }
 
 function buildSummaryPerformanceColumns({
-    previousFinancialYearLabel,
-    currentFinancialYearLabel,
+    baselinePeriodLabel,
+    currentPeriodLabel,
 }: {
-    previousFinancialYearLabel: string;
-    currentFinancialYearLabel: string;
+    baselinePeriodLabel: string;
+    currentPeriodLabel: string;
 }): TableProps<AnalyticsData>["columns"] {
     return [
         {
@@ -1987,26 +2053,17 @@ function buildSummaryPerformanceColumns({
             }),
         },
         {
-            title: previousFinancialYearLabel,
+            title: baselinePeriodLabel,
             onHeaderCell: () => ({
                 style: { backgroundColor: REPORT_COLORS.tableHeader },
             }),
             children: [
                 {
-                    title: "Baseline (%)",
-                    dataIndex: "previousBaseline",
-                    key: "previousBaseline",
+                    title: "Baseline",
+                    dataIndex: "baselinePeriodBaseline",
+                    key: "baselinePeriodBaseline",
                     align: "center",
-                    render: (value: unknown) => formatReportNumberish(value),
-                    onHeaderCell: () => ({
-                        style: { backgroundColor: REPORT_COLORS.tableHeader },
-                    }),
-                },
-                {
-                    title: "Target (%)",
-                    dataIndex: "previousTarget",
-                    key: "previousTarget",
-                    align: "center",
+                    width: 110,
                     render: (value: unknown) => formatReportNumberish(value),
                     onHeaderCell: () => ({
                         style: { backgroundColor: REPORT_COLORS.tableHeader },
@@ -2015,26 +2072,28 @@ function buildSummaryPerformanceColumns({
             ],
         },
         {
-            title: currentFinancialYearLabel,
+            title: currentPeriodLabel,
             onHeaderCell: () => ({
                 style: { backgroundColor: REPORT_COLORS.tableHeader },
             }),
             children: [
                 {
-                    title: "Baseline (%)",
-                    dataIndex: "currentBaseline",
-                    key: "currentBaseline",
+                    title: "Target",
+                    dataIndex: "currentPeriodTarget",
+                    key: "currentPeriodTarget",
                     align: "center",
+                    width: 110,
                     render: (value: unknown) => formatReportNumberish(value),
                     onHeaderCell: () => ({
                         style: { backgroundColor: REPORT_COLORS.tableHeader },
                     }),
                 },
                 {
-                    title: "Target (%)",
-                    dataIndex: "currentTarget",
-                    key: "currentTarget",
+                    title: "Actual",
+                    dataIndex: "currentPeriodActual",
+                    key: "currentPeriodActual",
                     align: "center",
+                    width: 110,
                     render: (value: unknown) => formatReportNumberish(value),
                     onHeaderCell: () => ({
                         style: { backgroundColor: REPORT_COLORS.tableHeader },
@@ -2063,45 +2122,44 @@ function buildSummaryPerformanceColumns({
 
 function buildSummaryPerformanceRows({
     rows,
-    pe,
+    baselinePe,
+    currentPe,
+    currentPeriodLabel,
     allOptionsMap,
     rowType,
-    quarterDetails,
     voteMap,
 }: {
     rows: AnalyticsData[];
-    pe: string;
+    baselinePe: string;
+    currentPe: string;
+    currentPeriodLabel: string;
     allOptionsMap: Map<string, string>;
     rowType: "outcome" | "intermediateOutcome" | "output";
-    quarterDetails: QuarterDetail[];
     voteMap: Map<string, VoteMetadata>;
 }) {
     return orderBy(
         Object.values(groupBy(rows, "id")).map((group) => {
             const current = group[0];
-            const baseline = getNumericValue(group, `${pe}baseline`);
-            const target = getNumericValue(group, `${pe}target`);
-            const actual = getNumericValue(group, `${pe}actual`);
-            const quarterNarratives = buildQuarterNarratives({
+            const baselineBaseline = getNumericValue(
+                group,
+                `${baselinePe}baseline`,
+            );
+            const currentTarget = getNumericValue(group, `${currentPe}target`);
+            const currentActual = getNumericValue(group, `${currentPe}actual`);
+            const annualNarrative = buildPeriodNarrative({
                 rows: group,
-                quarterDetails,
+                period: currentPe,
                 voteMap,
             });
-            const ratio = calculatePerformanceRatio(
-                actual.sum,
-                target.sum,
+            const performanceRatingValue = calculateSummaryRatioValue(
+                currentActual.sum,
+                currentTarget.sum,
                 String(current?.aggregationType ?? ""),
                 String(current?.["descending indicator type"] ?? ""),
             );
 
             return {
                 ...current,
-                ...Object.fromEntries(
-                    quarterNarratives.map(({ period, text }) => [
-                        `${period}comment`,
-                        text,
-                    ]),
-                ),
                 key: current?.id,
                 programObjective: resolveMetadataLabel(
                     current?.programObjective ??
@@ -2115,14 +2173,23 @@ function buildSummaryPerformanceRows({
                     rowType,
                 ),
                 indicator: current?.name ?? "-",
-                previousBaseline: "-",
-                previousTarget: "-",
-                currentBaseline: baseline.hasValue ? baseline.sum : "-",
-                currentTarget: target.hasValue ? target.sum : "-",
-                performanceRating: Number.isNaN(ratio)
+                baselinePeriodBaseline: baselineBaseline.hasValue
+                    ? baselineBaseline.sum
+                    : "-",
+                currentPeriodTarget: currentTarget.hasValue
+                    ? currentTarget.sum
+                    : "-",
+                currentPeriodActual: currentActual.hasValue
+                    ? currentActual.sum
+                    : "-",
+                summaryComment: annualNarrative,
+                summaryCommentLabel: currentPeriodLabel,
+                performanceRating: Number.isNaN(performanceRatingValue)
                     ? "-"
-                    : formatReportPercent(ratio / 100),
-                performanceRatingValue: Number.isNaN(ratio) ? undefined : ratio / 100,
+                    : formatReportPercent(performanceRatingValue),
+                performanceRatingValue: Number.isNaN(performanceRatingValue)
+                    ? undefined
+                    : performanceRatingValue,
             };
         }),
         ["programObjective", "outcome", "indicator"],
@@ -2155,11 +2222,18 @@ function resolveMetadataLabel(
     return label ?? String(value);
 }
 
-function formatFinancialYearLabel(startYear: number) {
-    if (!Number.isFinite(startYear)) {
+function formatPeriodLabel(periodId: string) {
+    if (!periodId) {
         return "";
     }
-    return `${startYear}/${String(startYear + 1).slice(-2)}`;
+    try {
+        return createFixedPeriodFromPeriodId({
+            calendar: "gregory",
+            periodId,
+        }).name;
+    } catch {
+        return periodId;
+    }
 }
 
 function buildPerformanceLegendExportColumns(): TableProps<AnalyticsData>["columns"] {
@@ -2225,51 +2299,24 @@ function formatReportNumberish(value: unknown) {
     return reportNumberFormatter.format(numericValue);
 }
 
-function buildExecutiveSummarySections(
-    rows: AnalyticsData[],
-    quarterDetails: QuarterDetail[],
+function calculateSummaryRatioValue(
+    actual: number,
+    comparisonValue: number,
+    aggregationType: string,
+    isReducing: string,
 ) {
-    const overviewItems: DescriptionsProps["items"] = quarterDetails.map(
-        ({ period, quarterLabel }) => {
-            const comments = rows
-                .map((row) => String(row[`${period}comment`] ?? "").trim())
-                .filter((comment) => comment.length > 0);
-
-            return {
-                key: `overview-${quarterLabel}`,
-                label: `${quarterLabel} performance overview`,
-                children:
-                    comments.length > 0
-                        ? Array.from(new Set(comments)).join(" | ")
-                        : "No narrative captured for this quarter.",
-            };
-        },
+    const ratio = calculatePerformanceRatio(
+        actual,
+        comparisonValue,
+        aggregationType,
+        isReducing,
     );
 
-    const combinedNarrative = overviewItems
-        .filter((item) => String(item.children).trim().length > 0)
-        .map((item) => `${item.label}: ${String(item.children)}`)
-        .join("\n");
+    if (!Number.isFinite(ratio)) {
+        return Number.NaN;
+    }
 
-    return {
-        overviewItems,
-        challengeItems: [
-            {
-                key: "programme-summary",
-                label: "Programme summary",
-                children: combinedNarrative || "No challenges captured.",
-            },
-            {
-                key: "indicator-details",
-                label: "Indicator details",
-                children:
-                    "Expand any indicator row in the summary performance tables to review quarter-specific narratives.",
-            },
-        ],
-        overview: combinedNarrative || "No narrative captured for this programme.",
-        challengesAndRecommendations:
-            combinedNarrative || "No challenges or recommendations captured.",
-    };
+    return aggregationType === "LAST" ? ratio : ratio / 100;
 }
 
 function getProgrammeCellStyle(value: number) {
@@ -2460,21 +2507,22 @@ function buildDetailedTableProps({
 function buildSummaryTableProps({
     rows,
     columns,
-    quarterDetails,
+    periodLabel,
 }: {
     rows: AnalyticsData[];
     columns: TableProps<AnalyticsData>["columns"];
-    quarterDetails: QuarterDetail[];
+    periodLabel: string;
 }) {
     return {
         rowKey: "key",
         bordered: true,
+        sticky: true,
         tableLayout: "auto",
         pagination: false,
         size: "small",
         dataSource: rows,
         columns,
-        expandable: buildNarrativeExpandableConfig(quarterDetails),
+        expandable: buildSummaryNarrativeExpandableConfig(periodLabel),
     } satisfies TableProps<AnalyticsData>;
 }
 
