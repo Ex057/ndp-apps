@@ -9,7 +9,7 @@ import {
     TableProps,
     Typography,
 } from "antd";
-import React, { useState } from "react";
+import React from "react";
 import Performance from "../../../../components/performance";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { AnalyticsData } from "../../../../types";
@@ -176,35 +176,8 @@ function Component() {
         ...budgetData.map((d) => d["UBWSASWdyfi"]),
     ]);
 
-    const [finalData, setFinalData] = useState(
-        Array.from(allPrograms).map((vote) => {
-            const outputPerformance =
-                outputData.find((d) => d["UBWSASWdyfi"] === vote)
-                    ?.totalWeighted ?? 0;
-            const outcomePerformance =
-                outcomeData.find((d) => d["UBWSASWdyfi"] === vote)
-                    ?.totalWeighted ?? 0;
-            const absorptionRate =
-                budgetData.find((d) => d["UBWSASWdyfi"] === vote)
-                    ?.performance ?? 0;
-            const overallScore =
-                0.4 * outcomePerformance +
-                0.4 * outputPerformance +
-                0.2 * absorptionRate;
-            return {
-                ...(budgetData.find((d) => d["UBWSASWdyfi"] === vote) ?? {}),
-                ...(outcomeData.find((d) => d["UBWSASWdyfi"] === vote) ?? {}),
-                ...(outputData.find((d) => d["UBWSASWdyfi"] === vote) ?? {}),
-                outputPerformance,
-                outcomePerformance,
-                absorptionRate,
-                overallScore,
-            };
-        }),
-    );
-
-    React.useEffect(() => {
-        setFinalData(() =>
+    const finalData = React.useMemo(
+        () =>
             Array.from(allPrograms).map((vote) => {
                 const outputPerformance =
                     outputData.find((d) => d["UBWSASWdyfi"] === vote)
@@ -232,8 +205,8 @@ function Component() {
                     overallScore,
                 };
             }),
-        );
-    }, [ou]);
+        [allPrograms, budgetData, outcomeData, outputData],
+    );
 
     const columns: TableProps<(typeof finalData)[number]>["columns"] = [
         {
@@ -601,7 +574,7 @@ function Component() {
             dimensions: outcomeDimensions,
             pe: [pe],
         });
-    }, []);
+    }, [categories, outcomeDimensions, outcomeItems, pe]);
 
     const intermediateOutcomeDetailedColumns = React.useMemo(() => {
         return createPerformanceColumns({
@@ -620,7 +593,7 @@ function Component() {
             dimensions: outcomeDimensions,
             pe: [pe],
         });
-    }, []);
+    }, [categories, outcomeDimensions, outcomeItems, pe]);
     const outputDetailedColumns = React.useMemo(() => {
         return createPerformanceColumns({
             baseline: categories.get("Duw5yep8Vae")?.[0] || "",
@@ -638,7 +611,7 @@ function Component() {
             dimensions: outputDimensions,
             pe: [pe],
         });
-    }, [categories, outputItems, outputDimensions, pe]);
+    }, [categories, outputDimensions, outputItems, pe]);
     const actionDetailedColumns = React.useMemo(() => {
         return createPerformanceColumns({
             baseline: categories.get("kfnptfEdnYl")?.[0] || "",
@@ -656,7 +629,7 @@ function Component() {
             dimensions: actionDimensions,
             pe: [pe],
         });
-    }, []);
+    }, [actionDimensions, actionItems, categories, pe]);
 
     const outcomeTableProps = React.useMemo<TableProps<AnalyticsData>>(
         () => ({
@@ -707,7 +680,7 @@ function Component() {
                 },
             },
         }),
-        [outcomes, pe],
+        [outComeDetailedColumns, outcomeItems, outcomes, pe],
     );
     const intermediateOutcomeTableProps = React.useMemo<
         TableProps<AnalyticsData>
@@ -760,7 +733,12 @@ function Component() {
                 },
             },
         }),
-        [intermediateOutcomes],
+        [
+            intermediateOutcomeDetailedColumns,
+            intermediateOutcomeItems,
+            intermediateOutcomes,
+            pe,
+        ],
     );
     const outputTableProps = React.useMemo<TableProps<AnalyticsData>>(
         () => ({
@@ -812,7 +790,7 @@ function Component() {
                 },
             },
         }),
-        [outputs],
+        [outputDetailedColumns, outputItems, outputs, pe],
     );
     const actionTableProps = React.useMemo<TableProps<AnalyticsData>>(
         () => ({
@@ -864,7 +842,7 @@ function Component() {
                 },
             },
         }),
-        [actions],
+        [actionDetailedColumns, actionItems, actions, pe],
     );
 
     // Comment extractor functions for exports
