@@ -46,8 +46,8 @@ const REPORT_COLORS = {
 };
 const reportPercentFormatter = new Intl.NumberFormat("en-US", {
     style: "percent",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
 });
 const reportNumberFormatter = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
@@ -370,14 +370,6 @@ function Component() {
         ouIsFilter: false,
     });
 
-    const { data: programData } = useAnalyticsQuery({
-        engine,
-        search: regularSearch,
-        ndpVersion: v,
-        specificLevel: voteLevel,
-        ouIsFilter: false,
-    });
-
     const {
         data: outcomes,
         dimensions: outcomeDimensions,
@@ -417,16 +409,6 @@ function Component() {
         ouIsFilter: false,
     });
 
-    const indicatorPerformanceByVote = useMemo(
-        () =>
-            buildProgrammePerformanceSummaryRows({
-                dataElements: programData,
-                pe,
-                voteMap,
-                overallLabel: "Programme Overall",
-            }),
-        [pe, programData, voteMap],
-    );
     const outcomePerformanceByVote = useMemo(
         () =>
             buildProgrammePerformanceSummaryRows({
@@ -1712,27 +1694,36 @@ function buildOverallScorecardRows({
         voteMap,
         overallLabel,
     });
+    const outputRowsByVote = new Map(
+        outputRows.slice(1).map((row) => [String(row.ou ?? ""), row]),
+    );
+    const outcomeRowsByVote = new Map(
+        outcomeRows.slice(1).map((row) => [String(row.ou ?? ""), row]),
+    );
+    const budgetRowsByVote = new Map(
+        budgetRows.slice(1).map((row) => [String(row.ou ?? ""), row]),
+    );
 
     const voteIds = new Set(
         [
-            ...outcomeRows.slice(1).map((row) => row.ou),
-            ...outputRows.slice(1).map((row) => row.ou),
-            ...budgetRows.slice(1).map((row) => row.ou),
+            ...outcomeRowsByVote.keys(),
+            ...outputRowsByVote.keys(),
+            ...budgetRowsByVote.keys(),
         ].filter(Boolean),
     );
 
     const childRows = orderBy(
         Array.from(voteIds).map((voteId) => {
-            const outputPerformance =
-                outputRows.find((row) => row.ou === voteId)?.totalWeighted ?? 0;
-            const outcomePerformance =
-                outcomeRows.find((row) => row.ou === voteId)?.totalWeighted ?? 0;
-            const absorptionRate =
-                budgetRows.find((row) => row.ou === voteId)?.performance ?? 0;
+            const outputRow = outputRowsByVote.get(voteId);
+            const outcomeRow = outcomeRowsByVote.get(voteId);
+            const budgetRow = budgetRowsByVote.get(voteId);
+            const outputPerformance = outputRow?.totalWeighted ?? 0;
+            const outcomePerformance = outcomeRow?.totalWeighted ?? 0;
+            const absorptionRate = budgetRow?.performance ?? 0;
             return {
-                ...(budgetRows.find((row) => row.ou === voteId) ?? {}),
-                ...(outcomeRows.find((row) => row.ou === voteId) ?? {}),
-                ...(outputRows.find((row) => row.ou === voteId) ?? {}),
+                ...(budgetRow ?? {}),
+                ...(outcomeRow ?? {}),
+                ...(outputRow ?? {}),
                 outputPerformance,
                 outcomePerformance,
                 absorptionRate,

@@ -86,8 +86,9 @@
 }
 
 .policy-actions-filter-label {
-	flex: 0 0 76px;
+	flex: 0 0 140px;
 	margin: 0;
+	white-space: nowrap;
 }
 
 .policy-actions-filter-field {
@@ -513,6 +514,7 @@
 
 	.policy-actions-filter-label {
 		flex-basis: auto;
+		white-space: normal;
 	}
 
 	.policy-actions-period-field {

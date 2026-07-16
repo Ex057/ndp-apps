@@ -51,6 +51,7 @@ const PROGRAMME_TYPE_ORDER = [
 type QuarterKey = (typeof QUARTER_KEYS)[number];
 type PeriodColumnKey = QuarterKey | "financialYear";
 type Band = "green" | "yellow" | "red";
+type PeriodSortOrder = "ascend" | "descend";
 
 export const ProgrammeReportingRateCompletenessIndexRoute = createRoute({
     path: "/",
@@ -74,6 +75,11 @@ function Component() {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+    const [selectedPeriodByRowKey, setSelectedPeriodByRowKey] = useState<
+        Partial<Record<string, PeriodColumnKey>>
+    >({});
+    const [sortField, setSortField] = useState<PeriodColumnKey>();
+    const [sortOrder, setSortOrder] = useState<PeriodSortOrder>();
     const [reportPanelHeight, setReportPanelHeight] = useState<number>();
     const [tableScrollY, setTableScrollY] = useState(320);
     const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(true);
@@ -103,6 +109,10 @@ function Component() {
 
     useEffect(() => {
         setExpandedRowKeys([]);
+    }, [selectedFinancialYear, selectedMDA, selectedQuarters]);
+
+    useEffect(() => {
+        setSelectedPeriodByRowKey({});
     }, [selectedFinancialYear, selectedMDA, selectedQuarters]);
 
     useEffect(() => {
@@ -145,15 +155,22 @@ function Component() {
     );
 
     const allRows = reportRowsQuery.data ?? [];
+    const sortedRows = useMemo(
+        () => sortReportingRateRows(allRows, sortField, sortOrder),
+        [allRows, sortField, sortOrder],
+    );
     const pagedRows = useMemo(
         () =>
-            allRows.slice(
+            sortedRows.slice(
                 (currentPage - 1) * pageSize,
                 (currentPage - 1) * pageSize + pageSize,
             ),
-        [allRows, currentPage, pageSize],
+        [sortedRows, currentPage, pageSize],
     );
-    const totalPages = Math.max(1, Math.ceil(allRows.length / Math.max(pageSize, 1)));
+    const totalPages = Math.max(
+        1,
+        Math.ceil(sortedRows.length / Math.max(pageSize, 1)),
+    );
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -195,20 +212,25 @@ function Component() {
     );
 
     const summaryCards = useMemo(() => {
-        const assigned = allRows.reduce(
+        const assigned = sortedRows.reduce(
             (sum, row) => sum + row.assignedDataSetCount,
             0,
         );
         const financialYearRate =
-            allRows.length === 0
+            sortedRows.length === 0
                 ? 0
-                : allRows.reduce(
+                : sortedRows.reduce(
                     (sum, row) => sum + row.periodSummaries.financialYear.rate,
                     0,
-                ) / allRows.length;
+                ) / sortedRows.length;
 
         return [
-            { title: "Programme", value: allRows.length, bg: "#d8e8ff", color: "#1f4b8f" },
+            {
+                title: "Programme",
+                value: sortedRows.length,
+                bg: "#d8e8ff",
+                color: "#1f4b8f",
+            },
             {
                 title: "Assigned Datasets",
                 value: assigned,
@@ -222,7 +244,7 @@ function Component() {
                 color: "#8c6d1f",
             },
         ];
-    }, [allRows]);
+    }, [sortedRows]);
 
     const programmeColumns = useMemo<TableProps<ReportingRateSummaryRow>["columns"]>(
         () => [
@@ -232,10 +254,15 @@ function Component() {
                     periodKey === "financialYear" ? "Financial Year" : periodKey,
                     periodKey,
                     periodKey === "financialYear" ? 180 : 160,
+                    sortField,
+                    sortOrder,
+                    selectedPeriodByRowKey,
+                    setExpandedRowKeys,
+                    setSelectedPeriodByRowKey,
                 ),
             ),
         ],
-        [selectedPeriodColumns],
+        [selectedPeriodByRowKey, selectedPeriodColumns, sortField, sortOrder],
     );
 
     const indicatorGroupTypes = useMemo(() => {
@@ -257,10 +284,10 @@ function Component() {
     }, [allRows]);
 
     const handlePdfExport = useCallback(() => {
-        if (allRows.length === 0) return;
+        if (sortedRows.length === 0) return;
         void exportTrackerTableToPdf({
             columns: programmeColumns,
-            rows: allRows,
+            rows: sortedRows,
             title: "Reporting Rate Completeness",
             subtitle: buildSubtitle(
                 selectedFinancialYear,
@@ -268,13 +295,19 @@ function Component() {
                 selectedMDA ? "Filtered subtree" : "All programmes",
             ),
         });
-    }, [allRows, programmeColumns, selectedFinancialYear, selectedMDA, selectedQuarters]);
+    }, [
+        programmeColumns,
+        selectedFinancialYear,
+        selectedMDA,
+        selectedQuarters,
+        sortedRows,
+    ]);
 
     const handleExcelExport = useCallback(() => {
-        if (allRows.length === 0) return;
+        if (sortedRows.length === 0) return;
         void exportTrackerTableToExcel({
             columns: programmeColumns,
-            rows: allRows,
+            rows: sortedRows,
             title: "Reporting Rate Completeness",
             subtitle: buildSubtitle(
                 selectedFinancialYear,
@@ -283,7 +316,44 @@ function Component() {
             ),
             sheetName: "Reporting Rate Completeness",
         });
-    }, [allRows, programmeColumns, selectedFinancialYear, selectedMDA, selectedQuarters]);
+    }, [
+        programmeColumns,
+        selectedFinancialYear,
+        selectedMDA,
+        selectedQuarters,
+        sortedRows,
+    ]);
+
+    const handleTableChange: TableProps<ReportingRateSummaryRow>["onChange"] = (
+        _pagination,
+        _filters,
+        sorter,
+    ) => {
+        if (Array.isArray(sorter)) {
+            return;
+        }
+        const field = sorter.field ?? sorter.columnKey;
+        if (
+            field !== "Q1" &&
+            field !== "Q2" &&
+            field !== "Q3" &&
+            field !== "Q4" &&
+            field !== "financialYear"
+        ) {
+            setSortField(undefined);
+            setSortOrder(undefined);
+            return;
+        }
+
+        if (!sorter.order) {
+            setSortField(undefined);
+            setSortOrder(undefined);
+            return;
+        }
+
+        setSortField(field);
+        setSortOrder(sorter.order === "descend" ? "descend" : "ascend");
+    };
 
     return (
         <div className="reporting-rates-page">
@@ -456,7 +526,7 @@ function Component() {
                                     <Button
                                         size="small"
                                         icon={<DownloadOutlined />}
-                                        disabled={allRows.length === 0}
+                                        disabled={sortedRows.length === 0}
                                     />
                                 </Dropdown>
                             </div>
@@ -529,71 +599,26 @@ function Component() {
                                 dataSource={pagedRows}
                                 columns={programmeColumns}
                                 loading={reportRowsQuery.isFetching}
+                                onChange={handleTableChange}
                                 pagination={false}
                                 sticky
                                 scroll={{ x: "max-content", y: tableScrollY }}
                                 expandable={{
+                                    showExpandColumn: false,
                                     expandedRowKeys,
-                                    onExpandedRowsChange: (keys) =>
-                                        setExpandedRowKeys(keys),
                                     expandedRowRender: (record) => (
-                                        <Table
-                                            rowKey="key"
-                                            bordered
-                                            size="small"
-                                            pagination={false}
-                                            dataSource={record.programmeExpandedRows}
-                                            scroll={{ x: "max-content" }}
-                                            columns={[
-                                                {
-                                                    title: "MDA/LG",
-                                                    dataIndex: "orgUnitName",
-                                                    key: "orgUnitName",
-                                                    width: 240,
-                                                },
-                                                ...indicatorGroupTypes.map((type) => ({
-                                                    title: formatIndicatorGroupTypeLabel(type),
-                                                    key: type,
-                                                    width: 170,
-                                                    align: "center" as const,
-                                                    onCell: (
-                                                        expandedRow: ReportingRateProgrammeExpandedRow,
-                                                    ) => {
-                                                        const summary =
-                                                            expandedRow.indicatorGroupTypeSummaries[
-                                                                type
-                                                            ];
-                                                        return {
-                                                            style: {
-                                                                ...getSharedCellStyle(170),
-                                                                ...(summary
-                                                                    ? getBandCellStyle(
-                                                                          summary.performanceBand,
-                                                                      )
-                                                                    : {}),
-                                                            },
-                                                        };
-                                                    },
-                                                    render: (_: unknown, expandedRow: ReportingRateProgrammeExpandedRow) =>
-                                                        expandedRow
-                                                            .indicatorGroupTypeSummaries[type]
-                                                            ?.display || "-",
-                                                })),
-                                            ]}
+                                        <ProgrammeExpandedTable
+                                            indicatorGroupTypes={indicatorGroupTypes}
+                                            record={record}
+                                            selectedPeriod={
+                                                selectedPeriodByRowKey[record.key] ??
+                                                "financialYear"
+                                            }
                                         />
                                     ),
                                     rowExpandable: (record) =>
                                         record.programmeExpandedRows.length > 0,
                                 }}
-                                onRow={(record) => ({
-                                    onClick: () =>
-                                        setExpandedRowKeys((current) =>
-                                            current.includes(record.key)
-                                                ? current.filter((key) => key !== record.key)
-                                                : [...current, record.key],
-                                        ),
-                                    style: { cursor: "pointer" },
-                                })}
                                 locale={{
                                     emptyText: (
                                         <Empty description="No eligible dataset assignments matched the selected filters." />
@@ -725,6 +750,15 @@ function getBandCellStyle(band: Band): React.CSSProperties {
     };
 }
 
+function getSelectedPeriodCellStyle(): React.CSSProperties {
+    return {
+        backgroundColor: "#d8ecff",
+        color: "#1f4b8f",
+        boxShadow: "inset 0 0 0 2px #69b1ff",
+        textAlign: "center",
+    };
+}
+
 function makeTextColumn(
     title: string,
     dataIndex: keyof ReportingRateSummaryRow,
@@ -744,22 +778,160 @@ function makePeriodColumn(
     title: string,
     periodKey: PeriodColumnKey,
     width: number,
+    sortField: PeriodColumnKey | undefined,
+    sortOrder: PeriodSortOrder | undefined,
+    selectedPeriodByRowKey: Partial<Record<string, PeriodColumnKey>>,
+    setExpandedRowKeys: React.Dispatch<React.SetStateAction<React.Key[]>>,
+    setSelectedPeriodByRowKey: React.Dispatch<
+        React.SetStateAction<Partial<Record<string, PeriodColumnKey>>>
+    >,
 ) {
     return {
         title,
         key: periodKey,
+        dataIndex: periodKey,
+        sorter: true,
+        sortOrder: sortField === periodKey ? sortOrder : null,
         width,
         align: "center" as const,
         onHeaderCell: () => ({ style: getSharedCellStyle(width) }),
         onCell: (record: ReportingRateSummaryRow) => ({
             style: {
                 ...getSharedCellStyle(width),
-                ...getBandCellStyle(record.periodSummaries[periodKey].performanceBand),
+                ...(selectedPeriodByRowKey[record.key] === periodKey
+                    ? getSelectedPeriodCellStyle()
+                    : getBandCellStyle(record.periodSummaries[periodKey].performanceBand)),
+                cursor:
+                    record.programmeExpandedRows.length > 0 ? "pointer" : "default",
+            },
+            onClick: (event: React.MouseEvent) => {
+                event.stopPropagation();
+                if (record.programmeExpandedRows.length === 0) {
+                    return;
+                }
+                setSelectedPeriodByRowKey((current) => {
+                    const existingPeriod = current[record.key];
+                    const isSameSelection = existingPeriod === periodKey;
+
+                    setExpandedRowKeys((expandedKeys) => {
+                        const isExpanded = expandedKeys.includes(record.key);
+                        if (isExpanded && isSameSelection) {
+                            return expandedKeys.filter((key) => key !== record.key);
+                        }
+                        if (isExpanded) {
+                            return expandedKeys;
+                        }
+                        return [...expandedKeys, record.key];
+                    });
+
+                    if (isSameSelection) {
+                        const next = { ...current };
+                        delete next[record.key];
+                        return next;
+                    }
+
+                    return {
+                        ...current,
+                        [record.key]: periodKey,
+                    };
+                });
             },
         }),
         render: (_: unknown, record: ReportingRateSummaryRow) =>
             record.periodSummaries[periodKey].display,
     } satisfies NonNullable<TableProps<ReportingRateSummaryRow>["columns"]>[number];
+}
+
+function ProgrammeExpandedTable({
+    indicatorGroupTypes,
+    record,
+    selectedPeriod,
+}: {
+    indicatorGroupTypes: string[];
+    record: ReportingRateSummaryRow;
+    selectedPeriod: PeriodColumnKey;
+}) {
+    return (
+        <div>
+            <div
+                style={{
+                    marginBottom: "8px",
+                    color: "#1f4b8f",
+                    fontWeight: 600,
+                }}
+            >
+                Selected period detail:{" "}
+                {selectedPeriod === "financialYear" ? "Financial Year" : selectedPeriod}
+            </div>
+            <Table
+                rowKey="key"
+                bordered
+                size="small"
+                pagination={false}
+                dataSource={record.programmeExpandedRows}
+                scroll={{ x: "max-content" }}
+                columns={[
+                    {
+                        title: "MDA/LG",
+                        dataIndex: "orgUnitName",
+                        key: "orgUnitName",
+                        width: 240,
+                    },
+                    ...indicatorGroupTypes.map((type) => ({
+                        title: formatIndicatorGroupTypeLabel(type),
+                        key: type,
+                        width: 170,
+                        align: "center" as const,
+                        onCell: (
+                            expandedRow: ReportingRateProgrammeExpandedRow,
+                        ) => {
+                            const summary =
+                                expandedRow.indicatorGroupTypeSummariesByPeriod[
+                                    selectedPeriod
+                                ]?.[type];
+                            return {
+                                style: {
+                                    ...getSharedCellStyle(170),
+                                    ...(summary
+                                        ? getBandCellStyle(summary.performanceBand)
+                                        : {}),
+                                },
+                            };
+                        },
+                        render: (
+                            _: unknown,
+                            expandedRow: ReportingRateProgrammeExpandedRow,
+                        ) =>
+                            expandedRow.indicatorGroupTypeSummariesByPeriod[
+                                selectedPeriod
+                            ]?.[type]?.display || "-",
+                    })),
+                ]}
+            />
+        </div>
+    );
+}
+
+function sortReportingRateRows(
+    rows: ReportingRateSummaryRow[],
+    sortField: PeriodColumnKey | undefined,
+    sortOrder: PeriodSortOrder | undefined,
+) {
+    if (!sortField || !sortOrder) {
+        return rows;
+    }
+
+    const direction = sortOrder === "descend" ? -1 : 1;
+
+    return [...rows].sort((left, right) => {
+        const rateDifference =
+            left.periodSummaries[sortField].rate - right.periodSummaries[sortField].rate;
+        if (rateDifference !== 0) {
+            return rateDifference * direction;
+        }
+
+        return left.entityName.localeCompare(right.entityName) * direction;
+    });
 }
 
 function buildSubtitle(
