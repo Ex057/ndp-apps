@@ -3140,6 +3140,17 @@ function orderReportingRateQuarterKeys(
     return ordered.filter((quarter) => quarters.includes(quarter));
 }
 
+function getAllReportingRateQuarterSummaries(
+    quarterSummaries: Record<
+        "Q1" | "Q2" | "Q3" | "Q4",
+        ReportingRateSummaryPeriodSummary
+    >,
+) {
+    return (["Q1", "Q2", "Q3", "Q4"] as const).map(
+        (quarter) => quarterSummaries[quarter],
+    );
+}
+
 function normalizeReportingRateIndicatorGroupType(
     indicator: Record<string, unknown>,
 ) {
@@ -3408,7 +3419,7 @@ function buildVoteReportingRateRows({
                     periodSummaries: {
                         ...quarterSummaries,
                         financialYear: createReportingRateFinancialYearSummary(
-                            quarters.map((quarter) => quarterSummaries[quarter]),
+                            getAllReportingRateQuarterSummaries(quarterSummaries),
                         ),
                     },
                 } satisfies ReportingRateSummaryRow;
@@ -3485,8 +3496,8 @@ function buildProgrammeReportingRateRows({
                                 indicatorGroupTypeSummariesByPeriod.financialYear[
                                     indicatorGroupType
                                 ] = createReportingRateFinancialYearSummary(
-                                    quarters.map(
-                                        (quarter) => quarterSummariesByType[quarter],
+                                    getAllReportingRateQuarterSummaries(
+                                        quarterSummariesByType,
                                     ),
                                 );
                             });
@@ -3519,7 +3530,7 @@ function buildProgrammeReportingRateRows({
                     periodSummaries: {
                         ...quarterSummaries,
                         financialYear: createReportingRateFinancialYearSummary(
-                            quarters.map((quarter) => quarterSummaries[quarter]),
+                            getAllReportingRateQuarterSummaries(quarterSummaries),
                         ),
                     },
                 } satisfies ReportingRateSummaryRow;

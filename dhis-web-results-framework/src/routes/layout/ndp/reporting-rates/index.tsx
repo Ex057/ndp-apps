@@ -881,11 +881,18 @@ function makePeriodColumn(
                 ...(selectedPeriodByRowKey[record.key] === periodKey
                     ? getSelectedPeriodCellStyle()
                     : getBandCellStyle(record.periodSummaries[periodKey].performanceBand)),
-                cursor: record.assignedDataSets.length > 0 ? "pointer" : "default",
+                cursor:
+                    periodKey !== "financialYear" &&
+                    record.assignedDataSets.length > 0
+                        ? "pointer"
+                        : "default",
             },
             onClick: (event: React.MouseEvent) => {
                 event.stopPropagation();
-                if (record.assignedDataSets.length === 0) {
+                if (
+                    periodKey === "financialYear" ||
+                    record.assignedDataSets.length === 0
+                ) {
                     return;
                 }
 
@@ -929,6 +936,16 @@ function VoteExpandedTable({
     record: ReportingRateSummaryRow;
     selectedPeriod: PeriodColumnKey;
 }) {
+    const isFinancialYear = selectedPeriod === "financialYear";
+    const financialYearBreakdownRows = QUARTER_KEYS.map((quarter) => ({
+        key: quarter,
+        quarter,
+        percentage: record.periodSummaries[quarter].display,
+    })).concat({
+        key: "financialYear",
+        quarter: "Financial Year",
+        percentage: record.periodSummaries.financialYear.display,
+    });
     return (
         <div>
             <div
@@ -941,48 +958,76 @@ function VoteExpandedTable({
                 Selected period detail:{" "}
                 {selectedPeriod === "financialYear" ? "Financial Year" : selectedPeriod}
             </div>
-            <Table
-                className="reporting-rates-expanded-table"
-                rowKey="key"
-                size="small"
-                pagination={false}
-                dataSource={record.assignedDataSets}
-                scroll={{ x: "max-content" }}
-                columns={[
-                    {
-                        title: "Dataset",
-                        dataIndex: "dataSetName",
-                        key: "dataSetName",
-                        width: 260,
-                    },
-                    {
-                        title: "Reporting Cycle",
-                        dataIndex: "periodType",
-                        key: "periodType",
-                        width: 180,
-                        render: (value: string) => value || "-",
-                    },
-                    {
-                        title: "Levels",
-                        dataIndex: "indicatorGroupTypeLabel",
-                        key: "indicatorGroupTypeLabel",
-                        width: 260,
-                        render: (value: string) => value || "-",
-                    },
-                    {
-                        title: "Reported",
-                        key: "reported",
-                        align: "center",
-                        width: 120,
-                        render: (_: unknown, row) => (
-                            <Checkbox
-                                checked={row.reportedByPeriod[selectedPeriod]}
-                                disabled
-                            />
-                        ),
-                    },
-                ]}
-            />
+            {isFinancialYear ? (
+                <Table
+                    className="reporting-rates-expanded-table"
+                    rowKey="key"
+                    size="small"
+                    pagination={false}
+                    dataSource={financialYearBreakdownRows}
+                    columns={[
+                        {
+                            title: "Quarter",
+                            dataIndex: "quarter",
+                            key: "quarter",
+                            width: 220,
+                        },
+                        {
+                            title: "Percentage",
+                            dataIndex: "percentage",
+                            key: "percentage",
+                            width: 180,
+                            align: "center",
+                        },
+                    ]}
+                />
+            ) : (
+                <Table
+                    className="reporting-rates-expanded-table"
+                    rowKey="key"
+                    size="small"
+                    pagination={false}
+                    dataSource={record.assignedDataSets}
+                    scroll={{ x: "max-content" }}
+                    columns={[
+                        {
+                            title: "Dataset",
+                            dataIndex: "dataSetName",
+                            key: "dataSetName",
+                            width: 260,
+                        },
+                        {
+                            title: "Reporting Cycle",
+                            dataIndex: "periodType",
+                            key: "periodType",
+                            width: 180,
+                            render: (value: string) => value || "-",
+                        },
+                        {
+                            title: "Levels",
+                            dataIndex: "indicatorGroupTypeLabel",
+                            key: "indicatorGroupTypeLabel",
+                            width: 260,
+                            render: (value: string) => value || "-",
+                        },
+                        {
+                            title: "Reported",
+                            key: "reported",
+                            align: "center",
+                            width: 120,
+                            render: (
+                                _: unknown,
+                                row: ReportingRateSummaryRow["assignedDataSets"][number],
+                            ) => (
+                                <Checkbox
+                                    checked={row.reportedByPeriod[selectedPeriod]}
+                                    disabled
+                                />
+                            ),
+                        },
+                    ]}
+                />
+            )}
         </div>
     );
 }

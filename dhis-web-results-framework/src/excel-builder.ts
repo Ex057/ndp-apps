@@ -2,9 +2,75 @@ import ExcelJS, { Alignment } from "exceljs";
 import { saveAs } from "file-saver";
 import { TableProps } from "antd";
 
-const hexToArgb = (hex: string): string => {
-    const cleanHex = hex.replace("#", "");
+const hexToArgb = (hex?: string): string | undefined => {
+    if (!hex || typeof hex !== "string") {
+        return undefined;
+    }
+
+    const cleanHex = hex.replace("#", "").trim();
+    if (!cleanHex) {
+        return undefined;
+    }
+
+    const namedColors: Record<string, string> = {
+        black: "FF000000",
+        white: "FFFFFFFF",
+        red: "FFFF0000",
+        green: "FF008000",
+        blue: "FF0000FF",
+        yellow: "FFFFFF00",
+        gray: "FF808080",
+        grey: "FF808080",
+    };
+
+    const namedColor = namedColors[cleanHex.toLowerCase()];
+    if (namedColor) {
+        return namedColor;
+    }
+
     return cleanHex.length === 6 ? `FF${cleanHex}` : cleanHex;
+};
+
+const expandHex = (hex?: string): string | undefined => {
+    if (!hex || typeof hex !== "string") {
+        return undefined;
+    }
+
+    const cleanHex = hex.replace("#", "").trim();
+    if (!cleanHex) {
+        return undefined;
+    }
+
+    if (cleanHex.length === 3) {
+        return cleanHex
+            .split("")
+            .map((char) => `${char}${char}`)
+            .join("");
+    }
+
+    if (cleanHex.length === 8) {
+        return cleanHex.slice(2);
+    }
+
+    return cleanHex.length === 6 ? cleanHex : undefined;
+};
+
+const getReadableFontColor = (backgroundHex?: string): string | undefined => {
+    const expandedHex = expandHex(backgroundHex);
+    if (!expandedHex) {
+        return undefined;
+    }
+
+    const red = parseInt(expandedHex.slice(0, 2), 16);
+    const green = parseInt(expandedHex.slice(2, 4), 16);
+    const blue = parseInt(expandedHex.slice(4, 6), 16);
+
+    if ([red, green, blue].some((value) => Number.isNaN(value))) {
+        return undefined;
+    }
+
+    const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+    return luminance > 0.6 ? "FF000000" : "FFFFFFFF";
 };
 
 const extractHeaderColor = (column: any) => {
@@ -161,6 +227,24 @@ interface ExcelBuilderOptions {
     sheetName?: string;
 }
 
+const sanitizeWorksheetName = (sheetName?: string): string => {
+    const fallbackName = "Data";
+
+    if (!sheetName) {
+        return fallbackName;
+    }
+
+    // Excel worksheet names cannot exceed 31 chars or contain these characters.
+    const sanitized = sheetName
+        .replace(/[\[\]\:\*\?\/\\]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/^'+|'+$/g, "");
+
+    const normalized = sanitized || fallbackName;
+    return normalized.slice(0, 31);
+};
+
 export class ExcelBuilder {
     private workbook: ExcelJS.Workbook;
     private worksheet: ExcelJS.Worksheet;
@@ -170,7 +254,7 @@ export class ExcelBuilder {
     constructor(options: ExcelBuilderOptions = {}) {
         this.workbook = new ExcelJS.Workbook();
         this.worksheet = this.workbook.addWorksheet(
-            options.sheetName || "Data",
+            sanitizeWorksheetName(options.sheetName),
         );
         this.currentRow = 1;
         this.maxColumns = 1;
@@ -197,10 +281,10 @@ export class ExcelBuilder {
 
         // Style based on level
         const styles = {
-            1: { fontSize: 16, fillColor: "FF404040", textColor: "FFFFFFFF" },
-            2: { fontSize: 14, fillColor: "FF808080", textColor: "FFFFFFFF" },
-            3: { fontSize: 12, fillColor: "FFC0C0C0", textColor: "FF000000" },
-            4: { fontSize: 11, fillColor: "FFE0E0E0", textColor: "FF000000" },
+            1: { fontSize: 16, fillColor: "FFD9D9D9", textColor: "FF000000" },
+            2: { fontSize: 14, fillColor: "FFE6E6E6", textColor: "FF000000" },
+            3: { fontSize: 12, fillColor: "FFF0F0F0", textColor: "FF000000" },
+            4: { fontSize: 11, fillColor: "FFF7F7F7", textColor: "FF000000" },
         };
 
         const style = styles[level];
@@ -333,15 +417,26 @@ export class ExcelBuilder {
 
                 // Apply color if exists
                 if (cell.color) {
-                    excelCell.fill = {
-                        type: "pattern",
-                        pattern: "solid",
-                        fgColor: { argb: hexToArgb(cell.color.bg) },
-                    };
-                    excelCell.font = {
-                        ...excelCell.font,
-                        color: { argb: hexToArgb(cell.color.fg) },
-                    };
+                    const backgroundColor = hexToArgb(cell.color.bg);
+                    const fontColor = hexToArgb(cell.color.fg);
+
+                    if (backgroundColor) {
+                        excelCell.fill = {
+                            type: "pattern",
+                            pattern: "solid",
+                            fgColor: { argb: backgroundColor },
+                        };
+                    }
+
+                    const resolvedFontColor =
+                        fontColor || getReadableFontColor(cell.color.bg);
+
+                    if (resolvedFontColor) {
+                        excelCell.font = {
+                            ...excelCell.font,
+                            color: { argb: resolvedFontColor },
+                        };
+                    }
                 }
 
                 // Record merge ranges
@@ -413,14 +508,22 @@ export class ExcelBuilder {
                         recordIndex,
                     );
                     if (cellColor) {
-                        cell.fill = {
-                            type: "pattern",
-                            pattern: "solid",
-                            fgColor: { argb: hexToArgb(cellColor.bg) },
-                        };
-                        if (cellColor.fg) {
+                        const backgroundColor = hexToArgb(cellColor.bg);
+                        const fontColor = hexToArgb(cellColor.fg);
+
+                        if (backgroundColor) {
+                            cell.fill = {
+                                type: "pattern",
+                                pattern: "solid",
+                                fgColor: { argb: backgroundColor },
+                            };
+                        }
+                        const resolvedFontColor =
+                            fontColor || getReadableFontColor(cellColor.bg);
+
+                        if (resolvedFontColor) {
                             cell.font = {
-                                color: { argb: hexToArgb(cellColor.fg) },
+                                color: { argb: resolvedFontColor },
                             };
                         }
                     }
@@ -521,15 +624,26 @@ export class ExcelBuilder {
 
                 // Apply color if exists
                 if (cell.color) {
-                    excelCell.fill = {
-                        type: "pattern",
-                        pattern: "solid",
-                        fgColor: { argb: hexToArgb(cell.color.bg) },
-                    };
-                    excelCell.font = {
-                        ...excelCell.font,
-                        color: { argb: hexToArgb(cell.color.fg) },
-                    };
+                    const backgroundColor = hexToArgb(cell.color.bg);
+                    const fontColor = hexToArgb(cell.color.fg);
+
+                    if (backgroundColor) {
+                        excelCell.fill = {
+                            type: "pattern",
+                            pattern: "solid",
+                            fgColor: { argb: backgroundColor },
+                        };
+                    }
+
+                    const resolvedFontColor =
+                        fontColor || getReadableFontColor(cell.color.bg);
+
+                    if (resolvedFontColor) {
+                        excelCell.font = {
+                            ...excelCell.font,
+                            color: { argb: resolvedFontColor },
+                        };
+                    }
                 }
 
                 // Record merge ranges
@@ -601,14 +715,22 @@ export class ExcelBuilder {
                         recordIndex,
                     );
                     if (cellColor) {
-                        cell.fill = {
-                            type: "pattern",
-                            pattern: "solid",
-                            fgColor: { argb: hexToArgb(cellColor.bg) },
-                        };
-                        if (cellColor.fg) {
+                        const backgroundColor = hexToArgb(cellColor.bg);
+                        const fontColor = hexToArgb(cellColor.fg);
+
+                        if (backgroundColor) {
+                            cell.fill = {
+                                type: "pattern",
+                                pattern: "solid",
+                                fgColor: { argb: backgroundColor },
+                            };
+                        }
+                        const resolvedFontColor =
+                            fontColor || getReadableFontColor(cellColor.bg);
+
+                        if (resolvedFontColor) {
                             cell.font = {
-                                color: { argb: hexToArgb(cellColor.fg) },
+                                color: { argb: resolvedFontColor },
                             };
                         }
                     }

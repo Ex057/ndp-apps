@@ -21,6 +21,11 @@ import {
     PERFORMANCE_COLORS,
     performanceLegendItems,
 } from "../../../../utils";
+import {
+    applySortOrderToColumns,
+    normalizeSorterField,
+    sortRowsByColumn,
+} from "../../../../utils/table-sort";
 import { RootRoute } from "../../../__root";
 import { ProgramFlashReportRoute } from "./route";
 import { ExcelBuilder } from "../../../../excel-builder";
@@ -74,7 +79,7 @@ const actionLegendItems = [
 function getQuarterDetails(pe: string): QuarterDetail[] {
     const year = Number(pe.slice(0, 4));
     return regularQuarterOrder.map((quarter) => {
-        const currentYear = quarter === 1 || quarter === 2 ? year + 1 : year;
+        const currentYear = quarter === 1 || quarter === 2 ? year : year + 1;
         const period = `${currentYear}${fullQuarters[quarter]}`;
         return {
             period,
@@ -251,6 +256,7 @@ function getStatusColumnCellStyle(color: string) {
     return {
         style: {
             backgroundColor: color,
+            color: "#000000",
         },
     };
 }
@@ -273,6 +279,7 @@ function getConditionalStatusColumnCellStyle(
                 Number.isFinite(numericValue) && numericValue > 0
                     ? color
                     : emptyColor,
+            color: "#000000",
         },
     };
 }
@@ -331,6 +338,24 @@ function Component() {
         [defaultOrgUnit, votes],
     );
     const voteLevel = useMemo(() => deriveVoteLevel(votes), [votes]);
+    const [scorecardSortState, setScorecardSortState] = React.useState<{
+        overall: { field?: string; order?: "ascend" | "descend" };
+        budget: { field?: string; order?: "ascend" | "descend" };
+    }>({
+        overall: {},
+        budget: {},
+    });
+    const [byVoteSortState, setByVoteSortState] = React.useState<{
+        outcome: { field?: string; order?: "ascend" | "descend" };
+        intermediateOutcome: { field?: string; order?: "ascend" | "descend" };
+        output: { field?: string; order?: "ascend" | "descend" };
+        action: { field?: string; order?: "ascend" | "descend" };
+    }>({
+        outcome: {},
+        intermediateOutcome: {},
+        output: {},
+        action: {},
+    });
 
     const regularSearch = useMemo(
         () => ({
@@ -486,6 +511,7 @@ function Component() {
                 baselinePe,
                 currentPe: pe,
                 currentPeriodLabel,
+                quarterDetails,
                 allOptionsMap,
                 rowType: "outcome",
                 voteMap,
@@ -496,6 +522,7 @@ function Component() {
             currentPeriodLabel,
             outcomes,
             pe,
+            quarterDetails,
             voteMap,
         ],
     );
@@ -506,6 +533,7 @@ function Component() {
                 baselinePe,
                 currentPe: pe,
                 currentPeriodLabel,
+                quarterDetails,
                 allOptionsMap,
                 rowType: "intermediateOutcome",
                 voteMap,
@@ -516,6 +544,7 @@ function Component() {
             currentPeriodLabel,
             intermediateOutcomes,
             pe,
+            quarterDetails,
             voteMap,
         ],
     );
@@ -526,11 +555,20 @@ function Component() {
                 baselinePe,
                 currentPe: pe,
                 currentPeriodLabel,
+                quarterDetails,
                 allOptionsMap,
                 rowType: "output",
                 voteMap,
             }),
-        [allOptionsMap, baselinePe, currentPeriodLabel, outputs, pe, voteMap],
+        [
+            allOptionsMap,
+            baselinePe,
+            currentPeriodLabel,
+            outputs,
+            pe,
+            quarterDetails,
+            voteMap,
+        ],
     );
     const performanceLegendColumns = useMemo(
         () => buildPerformanceLegendExportColumns(),
@@ -720,6 +758,62 @@ function Component() {
             ],
             [voteColumns],
         );
+    const sortedOverallScorecardRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: overallScorecardRows,
+                columns: overallScorecardColumns,
+                sortField: scorecardSortState.overall.field,
+                sortOrder: scorecardSortState.overall.order,
+            }),
+        [
+            overallScorecardColumns,
+            overallScorecardRows,
+            scorecardSortState.overall.field,
+            scorecardSortState.overall.order,
+        ],
+    );
+    const sortedBudgetScorecardRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: budgetScorecardRows,
+                columns: budgetScorecardColumns,
+                sortField: scorecardSortState.budget.field,
+                sortOrder: scorecardSortState.budget.order,
+            }),
+        [
+            budgetScorecardColumns,
+            budgetScorecardRows,
+            scorecardSortState.budget.field,
+            scorecardSortState.budget.order,
+        ],
+    );
+    const sortedOverallScorecardColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: overallScorecardColumns,
+                sortField: scorecardSortState.overall.field,
+                sortOrder: scorecardSortState.overall.order,
+            }),
+        [
+            overallScorecardColumns,
+            scorecardSortState.overall.field,
+            scorecardSortState.overall.order,
+        ],
+    );
+    const sortedBudgetScorecardColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: budgetScorecardColumns,
+                sortField: scorecardSortState.budget.field,
+                sortOrder: scorecardSortState.budget.order,
+            }),
+        [
+            budgetScorecardColumns,
+            scorecardSortState.budget.field,
+            scorecardSortState.budget.order,
+        ],
+    );
     const summaryPerformanceColumns = useMemo<
         TableProps<AnalyticsData>["columns"]
     >(
@@ -729,6 +823,66 @@ function Component() {
                 currentPeriodLabel,
             }),
         [baselinePeriodLabel, currentPeriodLabel],
+    );
+    const handleScorecardTableChange = useCallback(
+        (tableKey: "overall" | "budget"): TableProps<AnalyticsData>["onChange"] =>
+            (_pagination, _filters, sorter) => {
+                if (Array.isArray(sorter)) {
+                    return;
+                }
+
+                const field = normalizeSorterField(
+                    sorter.field ?? sorter.columnKey,
+                );
+
+                setScorecardSortState((previous) => ({
+                    ...previous,
+                    [tableKey]:
+                        !field || !sorter.order
+                            ? {}
+                            : {
+                                  field,
+                                  order:
+                                      sorter.order === "descend"
+                                          ? "descend"
+                                          : "ascend",
+                              },
+                }));
+            },
+        [],
+    );
+    const handleByVoteTableChange = useCallback(
+        (
+            tableKey:
+                | "outcome"
+                | "intermediateOutcome"
+                | "output"
+                | "action",
+        ): TableProps<AnalyticsData>["onChange"] =>
+            (_pagination, _filters, sorter) => {
+                if (Array.isArray(sorter)) {
+                    return;
+                }
+
+                const field = normalizeSorterField(
+                    sorter.field ?? sorter.columnKey,
+                );
+
+                setByVoteSortState((previous) => ({
+                    ...previous,
+                    [tableKey]:
+                        !field || !sorter.order
+                            ? {}
+                            : {
+                                  field,
+                                  order:
+                                      sorter.order === "descend"
+                                          ? "descend"
+                                          : "ascend",
+                              },
+                }));
+            },
+        [],
     );
 
     const actionPerformanceByVoteColumns = useMemo<
@@ -882,6 +1036,118 @@ function Component() {
     const indicatorPerformanceColumns = useMemo(
         () => (voteColumns ?? []).concat(performanceColumns),
         [performanceColumns, voteColumns],
+    );
+    const sortedOutcomePerformanceByVoteRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: outcomePerformanceByVote,
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.outcome.field,
+                sortOrder: byVoteSortState.outcome.order,
+            }),
+        [
+            byVoteSortState.outcome.field,
+            byVoteSortState.outcome.order,
+            indicatorPerformanceColumns,
+            outcomePerformanceByVote,
+        ],
+    );
+    const sortedIntermediateOutcomePerformanceByVoteRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: intermediateOutcomePerformanceByVote,
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.intermediateOutcome.field,
+                sortOrder: byVoteSortState.intermediateOutcome.order,
+            }),
+        [
+            byVoteSortState.intermediateOutcome.field,
+            byVoteSortState.intermediateOutcome.order,
+            indicatorPerformanceColumns,
+            intermediateOutcomePerformanceByVote,
+        ],
+    );
+    const sortedOutputPerformanceByVoteRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: outputPerformanceByVote,
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.output.field,
+                sortOrder: byVoteSortState.output.order,
+            }),
+        [
+            byVoteSortState.output.field,
+            byVoteSortState.output.order,
+            indicatorPerformanceColumns,
+            outputPerformanceByVote,
+        ],
+    );
+    const sortedActionPerformanceByVoteRows = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: actionPerformanceByVoteRows as AnalyticsData[],
+                columns: actionPerformanceByVoteColumns,
+                sortField: byVoteSortState.action.field,
+                sortOrder: byVoteSortState.action.order,
+            }),
+        [
+            actionPerformanceByVoteColumns,
+            actionPerformanceByVoteRows,
+            byVoteSortState.action.field,
+            byVoteSortState.action.order,
+        ],
+    );
+    const sortedOutcomePerformanceByVoteColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.outcome.field,
+                sortOrder: byVoteSortState.outcome.order,
+            }),
+        [
+            byVoteSortState.outcome.field,
+            byVoteSortState.outcome.order,
+            indicatorPerformanceColumns,
+        ],
+    );
+    const sortedIntermediateOutcomePerformanceByVoteColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.intermediateOutcome.field,
+                sortOrder: byVoteSortState.intermediateOutcome.order,
+            }),
+        [
+            byVoteSortState.intermediateOutcome.field,
+            byVoteSortState.intermediateOutcome.order,
+            indicatorPerformanceColumns,
+        ],
+    );
+    const sortedOutputPerformanceByVoteColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: indicatorPerformanceColumns,
+                sortField: byVoteSortState.output.field,
+                sortOrder: byVoteSortState.output.order,
+            }),
+        [
+            byVoteSortState.output.field,
+            byVoteSortState.output.order,
+            indicatorPerformanceColumns,
+        ],
+    );
+    const sortedActionPerformanceByVoteColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: actionPerformanceByVoteColumns,
+                sortField: byVoteSortState.action.field,
+                sortOrder: byVoteSortState.action.order,
+            }),
+        [
+            actionPerformanceByVoteColumns,
+            byVoteSortState.action.field,
+            byVoteSortState.action.order,
+        ],
     );
 
     const outcomeDetailedColumns = useMemo(
@@ -1068,20 +1334,20 @@ function Component() {
             buildSummaryTableProps({
                 rows: outcomeSummaryRows,
                 columns: summaryPerformanceColumns,
-                periodLabel: currentPeriodLabel,
+                quarterDetails,
             }),
-        [currentPeriodLabel, outcomeSummaryRows, summaryPerformanceColumns],
+        [outcomeSummaryRows, quarterDetails, summaryPerformanceColumns],
     );
     const intermediateOutcomeSummaryTableProps = useMemo(
         () =>
             buildSummaryTableProps({
                 rows: intermediateOutcomeSummaryRows,
                 columns: summaryPerformanceColumns,
-                periodLabel: currentPeriodLabel,
+                quarterDetails,
             }),
         [
-            currentPeriodLabel,
             intermediateOutcomeSummaryRows,
+            quarterDetails,
             summaryPerformanceColumns,
         ],
     );
@@ -1090,11 +1356,10 @@ function Component() {
             buildSummaryTableProps({
                 rows: outputSummaryRows,
                 columns: summaryPerformanceColumns,
-                periodLabel: currentPeriodLabel,
+                quarterDetails,
             }),
-        [currentPeriodLabel, outputSummaryRows, summaryPerformanceColumns],
+        [outputSummaryRows, quarterDetails, summaryPerformanceColumns],
     );
-
     const handlePdfExport = useCallback(() => {
         const year = Number(pe.slice(0, 4));
         const financialYear = `Financial Year ${year}/${year + 1}`;
@@ -1116,28 +1381,37 @@ function Component() {
             .addSpacing(3)
             .addTitle("1.1 Performance Scorecards", 2)
             .addTitle("1.1.1 Overall Programme Performance Scorecard", 3)
-            .addTable(overallScorecardColumns, overallScorecardRows)
+            .addTable(
+                sortedOverallScorecardColumns,
+                sortedOverallScorecardRows,
+            )
             .addSpacing(3)
             .addTitle("1.2.1 Outcome Performance by Vote", 3)
             .addTitle(indicatorLegendItems.join(" | "), 4)
-            .addTable(indicatorPerformanceColumns, outcomePerformanceByVote)
-            .addSpacing(3)
-            .addTitle("1.2.1 Intermediate Outcome Performance by Vote", 3)
-            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(
-                indicatorPerformanceColumns,
-                intermediateOutcomePerformanceByVote,
+                sortedOutcomePerformanceByVoteColumns,
+                sortedOutcomePerformanceByVoteRows,
             )
             .addSpacing(3)
-            .addTitle("1.2.2 Output Performance by Vote", 3)
+            .addTitle("1.2.2 Intermediate Outcome Performance by Vote", 3)
             .addTitle(indicatorLegendItems.join(" | "), 4)
-            .addTable(indicatorPerformanceColumns, outputPerformanceByVote)
+            .addTable(
+                sortedIntermediateOutcomePerformanceByVoteColumns,
+                sortedIntermediateOutcomePerformanceByVoteRows,
+            )
             .addSpacing(3)
-            .addTitle("1.2.2 Action (Budget) Performance by Vote", 3)
+            .addTitle("1.2.3 Output Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
+            .addTable(
+                sortedOutputPerformanceByVoteColumns,
+                sortedOutputPerformanceByVoteRows,
+            )
+            .addSpacing(3)
+            .addTitle("1.2.4 Action (Budget) Performance by Vote", 3)
             .addTitle(actionLegendItems.join(" | "), 4)
             .addTable(
-                actionPerformanceByVoteColumns,
-                actionPerformanceByVoteRows,
+                sortedActionPerformanceByVoteColumns,
+                sortedActionPerformanceByVoteRows,
             )
             .addSpacing(3)
             .addTitle("1.3 Summary Performance", 2)
@@ -1151,31 +1425,34 @@ function Component() {
             .addTable(summaryPerformanceColumns, outputSummaryRows)
             .addSpacing(3)
             .addTitle("1.3.4 Summary Actions (Budget) Performance Scorecard", 3)
-            .addTable(budgetScorecardColumns, budgetScorecardRows)
+            .addTable(
+                sortedBudgetScorecardColumns,
+                sortedBudgetScorecardRows,
+            )
             .addSpacing(3)
             .addTitle("SECTION 3.0: DETAILED PERFORMANCE", 1)
-            .addTitle("1.2.1 Detailed Outcome Performance", 2)
+            .addTitle("3.1.1 Detailed Outcome Performance", 2)
             .addTableWithComments(
                 outcomeDetailedColumns,
                 outcomeDetailedData,
                 extractOutcomeComments,
             )
             .addSpacing(3)
-            .addTitle("1.2.1 Detailed Intermediate Outcome Performance", 2)
+            .addTitle("3.1.2 Detailed Intermediate Outcome Performance", 2)
             .addTableWithComments(
                 intermediateOutcomeDetailedColumns,
                 intermediateOutcomeDetailedData,
                 extractOutcomeComments,
             )
             .addSpacing(3)
-            .addTitle("1.2.2 Detailed Output Indicator Performance", 2)
+            .addTitle("3.1.3 Detailed Output Indicator Performance", 2)
             .addTableWithComments(
                 outputDetailedColumns,
                 outputDetailedData,
                 extractOutcomeComments,
             )
             .addSpacing(3)
-            .addTitle("1.2.4 Detailed Actions (Budget) Performance", 2)
+            .addTitle("3.1.4 Detailed Actions (Budget) Performance", 2)
             .addTitle(
                 "BP = Budget Planned | BA = Budget Approved | BR = Budget Released | BS = Budget Spent",
                 3,
@@ -1191,6 +1468,14 @@ function Component() {
         actionPerformanceByVoteRows,
         actionDetailedColumns,
         actionDetailedData,
+        byVoteSortState.action.field,
+        byVoteSortState.action.order,
+        byVoteSortState.intermediateOutcome.field,
+        byVoteSortState.intermediateOutcome.order,
+        byVoteSortState.outcome.field,
+        byVoteSortState.outcome.order,
+        byVoteSortState.output.field,
+        byVoteSortState.output.order,
         budgetScorecardColumns,
         budgetScorecardRows,
         extractOutcomeComments,
@@ -1215,13 +1500,21 @@ function Component() {
         performanceLegendColumns,
         performanceLegendData,
         selectedProgram,
+        sortedActionPerformanceByVoteColumns,
+        sortedActionPerformanceByVoteRows,
+        sortedIntermediateOutcomePerformanceByVoteColumns,
+        sortedIntermediateOutcomePerformanceByVoteRows,
+        sortedOutcomePerformanceByVoteColumns,
+        sortedOutcomePerformanceByVoteRows,
+        sortedOutputPerformanceByVoteColumns,
+        sortedOutputPerformanceByVoteRows,
         summaryPerformanceColumns,
     ]);
 
     const handleExcelExport = useCallback(() => {
         const builder = new ExcelBuilder({
             title: "Consolidated Program Performance Report",
-            sheetName: "Consolidated Program Performance Report",
+            sheetName: "Program Performance Report",
         });
 
         builder
@@ -1233,28 +1526,37 @@ function Component() {
             .addSpacer(3)
             .addTitle("1.1 Performance Scorecards", 2)
             .addTitle("1.1.1 Overall Programme Performance Scorecard", 3)
-            .addTable(overallScorecardColumns, overallScorecardRows)
+            .addTable(
+                sortedOverallScorecardColumns,
+                sortedOverallScorecardRows,
+            )
             .addSpacer(3)
             .addTitle("1.2.1 Outcome Performance by Vote", 3)
             .addTitle(indicatorLegendItems.join(" | "), 4)
-            .addTable(indicatorPerformanceColumns, outcomePerformanceByVote)
-            .addSpacer(3)
-            .addTitle("1.2.1 Intermediate Outcome Performance by Vote", 3)
-            .addTitle(indicatorLegendItems.join(" | "), 4)
             .addTable(
-                indicatorPerformanceColumns,
-                intermediateOutcomePerformanceByVote,
+                sortedOutcomePerformanceByVoteColumns,
+                sortedOutcomePerformanceByVoteRows,
             )
             .addSpacer(3)
-            .addTitle("1.2.2 Output Performance by Vote", 3)
+            .addTitle("1.2.2 Intermediate Outcome Performance by Vote", 3)
             .addTitle(indicatorLegendItems.join(" | "), 4)
-            .addTable(indicatorPerformanceColumns, outputPerformanceByVote)
+            .addTable(
+                sortedIntermediateOutcomePerformanceByVoteColumns,
+                sortedIntermediateOutcomePerformanceByVoteRows,
+            )
             .addSpacer(3)
-            .addTitle("1.2.2 Action (Budget) Performance by Vote", 3)
+            .addTitle("1.2.3 Output Performance by Vote", 3)
+            .addTitle(indicatorLegendItems.join(" | "), 4)
+            .addTable(
+                sortedOutputPerformanceByVoteColumns,
+                sortedOutputPerformanceByVoteRows,
+            )
+            .addSpacer(3)
+            .addTitle("1.2.4 Action (Budget) Performance by Vote", 3)
             .addTitle(actionLegendItems.join(" | "), 4)
             .addTable(
-                actionPerformanceByVoteColumns,
-                actionPerformanceByVoteRows,
+                sortedActionPerformanceByVoteColumns,
+                sortedActionPerformanceByVoteRows,
             )
             .addSpacer(3)
             .addTitle("1.3 Summary Performance", 2)
@@ -1268,31 +1570,34 @@ function Component() {
             .addTable(summaryPerformanceColumns, outputSummaryRows)
             .addSpacer(3)
             .addTitle("1.3.4 Summary Actions (Budget) Performance Scorecard", 3)
-            .addTable(budgetScorecardColumns, budgetScorecardRows)
+            .addTable(
+                sortedBudgetScorecardColumns,
+                sortedBudgetScorecardRows,
+            )
             .addSpacer(3)
             .addTitle("SECTION 3.0: DETAILED PERFORMANCE", 1)
-            .addTitle("1.2.1 Detailed Outcome Performance", 2)
+            .addTitle("3.1.1 Detailed Outcome Performance", 2)
             .addTableWithComments(
                 outcomeDetailedColumns,
                 outcomeDetailedData,
                 extractOutcomeComments,
             )
             .addSpacer(3)
-            .addTitle("1.2.1 Detailed Intermediate Outcome Performance", 2)
+            .addTitle("3.1.2 Detailed Intermediate Outcome Performance", 2)
             .addTableWithComments(
                 intermediateOutcomeDetailedColumns,
                 intermediateOutcomeDetailedData,
                 extractOutcomeComments,
             )
             .addSpacer(3)
-            .addTitle("1.2.2 Detailed Output Indicator Performance", 2)
+            .addTitle("3.1.3 Detailed Output Indicator Performance", 2)
             .addTableWithComments(
                 outputDetailedColumns,
                 outputDetailedData,
                 extractOutcomeComments,
             )
             .addSpacer(3)
-            .addTitle("1.2.4 Detailed Actions (Budget) Performance", 2)
+            .addTitle("3.1.4 Detailed Actions (Budget) Performance", 2)
             .addTitle(
                 "BP = Budget Planned | BA = Budget Approved | BR = Budget Released | BS = Budget Spent",
                 3,
@@ -1308,6 +1613,14 @@ function Component() {
         actionPerformanceByVoteRows,
         actionDetailedColumns,
         actionDetailedData,
+        byVoteSortState.action.field,
+        byVoteSortState.action.order,
+        byVoteSortState.intermediateOutcome.field,
+        byVoteSortState.intermediateOutcome.order,
+        byVoteSortState.outcome.field,
+        byVoteSortState.outcome.order,
+        byVoteSortState.output.field,
+        byVoteSortState.output.order,
         budgetScorecardColumns,
         budgetScorecardRows,
         extractOutcomeComments,
@@ -1330,6 +1643,14 @@ function Component() {
         overallScorecardRows,
         performanceLegendColumns,
         performanceLegendData,
+        sortedActionPerformanceByVoteColumns,
+        sortedActionPerformanceByVoteRows,
+        sortedIntermediateOutcomePerformanceByVoteColumns,
+        sortedIntermediateOutcomePerformanceByVoteRows,
+        sortedOutcomePerformanceByVoteColumns,
+        sortedOutcomePerformanceByVoteRows,
+        sortedOutputPerformanceByVoteColumns,
+        sortedOutputPerformanceByVoteRows,
         summaryPerformanceColumns,
     ]);
 
@@ -1405,13 +1726,14 @@ function Component() {
             </Typography.Title>
             <Table
                 className="programme-report-table programme-overall-table"
-                columns={overallScorecardColumns}
-                dataSource={overallScorecardRows}
+                columns={sortedOverallScorecardColumns}
+                dataSource={sortedOverallScorecardRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleScorecardTableChange("overall")}
             />
 
             <Typography.Title
@@ -1423,67 +1745,71 @@ function Component() {
             {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
-                columns={indicatorPerformanceColumns}
-                dataSource={outcomePerformanceByVote}
+                columns={sortedOutcomePerformanceByVoteColumns}
+                dataSource={sortedOutcomePerformanceByVoteRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleByVoteTableChange("outcome")}
             />
 
             <Typography.Title
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.1 Intermediate Outcome Performance by Vote
+                1.2.2 Intermediate Outcome Performance by Vote
             </Typography.Title>
             {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
-                columns={indicatorPerformanceColumns}
-                dataSource={intermediateOutcomePerformanceByVote}
+                columns={sortedIntermediateOutcomePerformanceByVoteColumns}
+                dataSource={sortedIntermediateOutcomePerformanceByVoteRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleByVoteTableChange("intermediateOutcome")}
             />
 
             <Typography.Title
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.2 Output Performance by Vote
+                1.2.3 Output Performance by Vote
             </Typography.Title>
             {renderLegendRow(indicatorLegendItems)}
             <Table
                 className="programme-report-table programme-indicator-performance-table"
-                columns={indicatorPerformanceColumns}
-                dataSource={outputPerformanceByVote}
+                columns={sortedOutputPerformanceByVoteColumns}
+                dataSource={sortedOutputPerformanceByVoteRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleByVoteTableChange("output")}
             />
 
             <Typography.Title
                 level={4}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.2 Action (Budget) Performance by Vote
+                1.2.4 Action (Budget) Performance by Vote
             </Typography.Title>
             {renderLegendRow(actionLegendItems)}
             <Table
                 className="programme-report-table"
-                columns={actionPerformanceByVoteColumns}
-                dataSource={actionPerformanceByVoteRows}
+                columns={sortedActionPerformanceByVoteColumns}
+                dataSource={sortedActionPerformanceByVoteRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleByVoteTableChange("action")}
             />
 
             <Typography.Title
@@ -1530,13 +1856,14 @@ function Component() {
             </Typography.Title>
             <Table
                 className="programme-report-table"
-                columns={budgetScorecardColumns}
-                dataSource={budgetScorecardRows}
+                columns={sortedBudgetScorecardColumns}
+                dataSource={sortedBudgetScorecardRows}
                 rowKey={(record) => record.key}
                 bordered
                 tableLayout="auto"
                 pagination={false}
                 size="small"
+                onChange={handleScorecardTableChange("budget")}
             />
 
             <Typography.Title
@@ -1549,14 +1876,14 @@ function Component() {
                 level={3}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.1 Detailed Outcome Performance
+                3.1.1 Detailed Outcome Performance
             </Typography.Title>
             <Table className="programme-report-table" {...outcomeTableProps} />
             <Typography.Title
                 level={3}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.1 Detailed Intermediate Outcome Performance
+                3.1.2 Detailed Intermediate Outcome Performance
             </Typography.Title>
             <Table
                 className="programme-report-table"
@@ -1566,14 +1893,14 @@ function Component() {
                 level={3}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.2 Detailed Output Indicator Performance
+                3.1.3 Detailed Output Indicator Performance
             </Typography.Title>
             <Table className="programme-report-table" {...outputTableProps} />
             <Typography.Title
                 level={3}
                 style={{ margin: 0, color: REPORT_COLORS.section }}
             >
-                1.2.4 Detailed Actions (Budget) Performance
+                3.1.4 Detailed Actions (Budget) Performance
             </Typography.Title>
             <Typography.Title
                 level={4}
@@ -2116,6 +2443,7 @@ function buildSummaryPerformanceRows({
     baselinePe,
     currentPe,
     currentPeriodLabel,
+    quarterDetails,
     allOptionsMap,
     rowType,
     voteMap,
@@ -2124,6 +2452,7 @@ function buildSummaryPerformanceRows({
     baselinePe: string;
     currentPe: string;
     currentPeriodLabel: string;
+    quarterDetails: QuarterDetail[];
     allOptionsMap: Map<string, string>;
     rowType: "outcome" | "intermediateOutcome" | "output";
     voteMap: Map<string, VoteMetadata>;
@@ -2142,6 +2471,11 @@ function buildSummaryPerformanceRows({
                 period: currentPe,
                 voteMap,
             });
+            const aggregatedQuarterNarratives = buildQuarterNarratives({
+                rows: group,
+                quarterDetails,
+                voteMap,
+            });
             const performanceRatingValue = calculateSummaryRatioValue(
                 currentActual.sum,
                 currentTarget.sum,
@@ -2149,7 +2483,7 @@ function buildSummaryPerformanceRows({
                 String(current?.["descending indicator type"] ?? ""),
             );
 
-            return {
+            const summaryRow: AnalyticsData = {
                 ...current,
                 key: current?.id,
                 programObjective: resolveMetadataLabel(
@@ -2182,6 +2516,11 @@ function buildSummaryPerformanceRows({
                     ? undefined
                     : performanceRatingValue,
             };
+            aggregatedQuarterNarratives.forEach(({ period, text }) => {
+                summaryRow[`${period}comment`] = text;
+            });
+
+            return summaryRow;
         }),
         ["programObjective", "outcome", "indicator"],
         ["asc", "asc", "asc"],
@@ -2247,7 +2586,7 @@ function buildMeasurementGuideColumns(): TableProps<AnalyticsData>["columns"] {
             key: "baseline",
             align: "center",
             onHeaderCell: () => ({
-                style: { backgroundColor: "#ffffff", color: REPORT_COLORS.section },
+                style: { backgroundColor: "#ffffff", color: "#000000" },
             }),
         },
         {
@@ -2256,7 +2595,7 @@ function buildMeasurementGuideColumns(): TableProps<AnalyticsData>["columns"] {
             key: "target",
             align: "center",
             onHeaderCell: () => ({
-                style: { backgroundColor: "#ffffff", color: REPORT_COLORS.section },
+                style: { backgroundColor: "#ffffff", color: "#000000" },
             }),
         },
         {
@@ -2265,7 +2604,7 @@ function buildMeasurementGuideColumns(): TableProps<AnalyticsData>["columns"] {
             key: "actual",
             align: "center",
             onHeaderCell: () => ({
-                style: { backgroundColor: "#ffffff", color: REPORT_COLORS.section },
+                style: { backgroundColor: "#ffffff", color: "#000000" },
             }),
         },
     ];
@@ -2312,15 +2651,18 @@ function calculateSummaryRatioValue(
 
 function getProgrammeCellStyle(value: number) {
     if (value >= 1) {
-        return { backgroundColor: REPORT_COLORS.achieved };
+        return { backgroundColor: REPORT_COLORS.achieved, color: "#000000" };
     }
     if (value >= 0.75) {
-        return { backgroundColor: REPORT_COLORS.moderate };
+        return { backgroundColor: REPORT_COLORS.moderate, color: "#000000" };
     }
     if (value > 0) {
-        return { backgroundColor: REPORT_COLORS.notAchieved };
+        return {
+            backgroundColor: REPORT_COLORS.notAchieved,
+            color: "#000000",
+        };
     }
-    return { backgroundColor: REPORT_COLORS.notAchieved };
+    return { backgroundColor: REPORT_COLORS.notAchieved, color: "#000000" };
 }
 
 function aggregateProgrammeDetailedRows({
@@ -2498,11 +2840,11 @@ function buildDetailedTableProps({
 function buildSummaryTableProps({
     rows,
     columns,
-    periodLabel,
+    quarterDetails,
 }: {
     rows: AnalyticsData[];
     columns: TableProps<AnalyticsData>["columns"];
-    periodLabel: string;
+    quarterDetails: QuarterDetail[];
 }) {
     return {
         rowKey: "key",
@@ -2513,7 +2855,7 @@ function buildSummaryTableProps({
         size: "small",
         dataSource: rows,
         columns,
-        expandable: buildSummaryNarrativeExpandableConfig(periodLabel),
+        expandable: buildNarrativeExpandableConfig(quarterDetails),
     } satisfies TableProps<AnalyticsData>;
 }
 

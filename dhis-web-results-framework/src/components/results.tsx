@@ -29,6 +29,11 @@ import {
     ResultsProps,
 } from "../types";
 import { legendItems } from "../utils";
+import {
+    applySortOrderToColumns,
+    normalizeSorterField,
+    sortRowsByColumn,
+} from "../utils/table-sort";
 import AttachmentDownload from "./attachment-download";
 import PerformanceLegend from "./performance-legend";
 import { PDFBuilder } from "../pdf-builder";
@@ -150,17 +155,109 @@ const makeIndicatorData = (
     ];
 };
 
-const quarterOrder = { Q1: "Q3", Q2: "Q4", Q3: "Q1", Q4: "Q2" };
+type QuarterKey = "Q1" | "Q2" | "Q3" | "Q4";
 
-const fullQuarters = {
+const quarterOrder: Record<QuarterKey, QuarterKey> = {
+    Q1: "Q3",
+    Q2: "Q4",
+    Q3: "Q1",
+    Q4: "Q2",
+};
+
+const fullQuarters: Record<number, QuarterKey> = {
     3: "Q1",
     4: "Q2",
     1: "Q3",
     2: "Q4",
 };
 
+type QuarterDetail = {
+    key: string;
+    period: string;
+    quarter: QuarterKey;
+    periodLabel: string;
+};
+
+function buildQuarterDetails(
+    periods: string[],
+    quarters: QuarterKey[],
+    items: ResultsProps["items"],
+): QuarterDetail[] {
+    return periods.flatMap((periodId) => {
+        const year = Number(periodId.slice(0, 4));
+        return quarters.map((quarter) => {
+            const currentYear =
+                quarter === "Q1" || quarter === "Q2" ? year : year + 1;
+            const period = `${currentYear}${quarterOrder[quarter]}`;
+
+            return {
+                key: `${periodId}-${quarter}`,
+                period,
+                quarter,
+                periodLabel: `${items?.[periodId]?.name ?? periodId} ${quarter}`,
+            };
+        });
+    });
+}
+
+function buildNarrativeDescriptionItems(
+    record: AnalyticsData,
+    quarterDetails: QuarterDetail[],
+) {
+    return quarterDetails.flatMap(({ key, periodLabel, period }) => {
+        const comment = String(record[`${period}comment`] ?? "").trim();
+        if (!comment) {
+            return [];
+        }
+
+        return [
+            {
+                label: periodLabel,
+                children: comment,
+                key,
+            },
+        ];
+    });
+}
+
+function extractNarrativeText(
+    record: AnalyticsData,
+    quarterDetails: QuarterDetail[],
+) {
+    const comments = quarterDetails.flatMap(({ period, quarter }) => {
+        const comment = String(record[`${period}comment`] ?? "").trim();
+        if (!comment) {
+            return [];
+        }
+
+        const year = Number(period.slice(0, 4));
+        return [`${year}/${year + 1} ${quarter}:\n ${comment}\n`];
+    });
+
+    return comments.length > 0 ? comments.join("\r") : null;
+}
+
+function extractAttachments(
+    record: AnalyticsData,
+    quarterDetails: QuarterDetail[],
+) {
+    return quarterDetails.flatMap(({ period }) => {
+        const attachment = record[`${period}attachment`];
+        return attachment ? [attachment] : [];
+    });
+}
+
 export function Results(props: ResultsProps) {
     const [modal, contextHolder] = Modal.useModal();
+    const [sortStateByTab, setSortStateByTab] = React.useState<
+        Record<
+            "target" | "performance",
+            { field?: string; order?: "ascend" | "descend" }
+        >
+    >({
+        target: {},
+        performance: {},
+    });
     const {
         tab,
         data,
@@ -186,7 +283,7 @@ export function Results(props: ResultsProps) {
     const baseline = cats.at(0) ?? "";
     const value = cats.at(-1) ?? "";
 
-    const [currentQuarters, setCurrentQuarters] = React.useState<string[]>([
+    const [currentQuarters, setCurrentQuarters] = React.useState<QuarterKey[]>([
         fullQuarters[dayjs().quarter()],
     ]);
     const indicatorColumns: TableProps<Partial<AnalyticsData>>["columns"] =
@@ -212,6 +309,8 @@ export function Results(props: ResultsProps) {
             {
                 title: nonBaseline ? "Budget Actions" : "Indicators",
                 dataIndex: "name",
+                key: "name",
+                sorter: true,
                 render: (text: string, record) => {
                     return (
                         <div>
@@ -260,6 +359,10 @@ export function Results(props: ResultsProps) {
         ],
         [prefixColumns],
     );
+    const quarterDetails = useMemo(
+        () => buildQuarterDetails(pe, currentQuarters, items),
+        [currentQuarters, items, pe],
+    );
 
     const columns = useMemo(() => {
         const columnsMap = new Map<
@@ -291,18 +394,22 @@ export function Results(props: ResultsProps) {
                                   budgetColumns[option] ||
                                   items[option]?.name?.replace("Budget ", ""),
                               dataIndex: `${pe}${option}`,
+                              key: `${pe}${option}`,
                               align: "center" as const,
                               minWidth: 90,
+                              sorter: true,
                           }))
                         : [
                               {
                                   title,
                                   dataIndex,
+                                  key: dataIndex,
                                   align: "center" as const,
                                   minWidth:
                                       configurations[v]?.data?.baseline === pe
                                           ? 100
                                           : 76,
+                                  sorter: true,
                               },
                           ],
                 };
@@ -330,8 +437,10 @@ export function Results(props: ResultsProps) {
                                               "",
                                           ),
                                       dataIndex: `${pe}${option}`,
+                                      key: `${pe}${option}`,
                                       align: "center" as const,
                                       width: 150,
+                                      sorter: true,
                                   };
                               })
                               .concat(
@@ -360,6 +469,7 @@ export function Results(props: ResultsProps) {
                                                       key: `${currentYear}${quarterOrder[quarter]}${option}`,
                                                       align: "center" as const,
                                                       width: 110,
+                                                      sorter: true,
                                                   })),
                                               {
                                                   title: `%`,
@@ -367,6 +477,7 @@ export function Results(props: ResultsProps) {
                                                   key: `${currentYear}${quarterOrder[quarter]}performance`,
                                                   align: "center",
                                                   width: 110,
+                                                  sorter: true,
                                                   onCell: (
                                                       row: Record<string, any>,
                                                   ) => {
@@ -404,12 +515,14 @@ export function Results(props: ResultsProps) {
                                                   dataIndex: `${currentYear}${quarterOrder[quarter]}actual`,
                                                   align: "center",
                                                   width: 110,
+                                                  sorter: true,
                                               },
                                               {
                                                   title: `%`,
                                                   dataIndex: `${currentYear}${quarterOrder[quarter]}performance`,
                                                   key: `${currentYear}${quarterOrder[quarter]}performance`,
                                                   align: "center",
+                                                  sorter: true,
                                                   onCell: (
                                                       row: Record<string, any>,
                                                   ) => {
@@ -434,6 +547,7 @@ export function Results(props: ResultsProps) {
                                       key: `${pe}${currentValue}`,
                                       width: 110,
                                       align: "center",
+                                      sorter: true,
                                       onCell: (row: Record<string, any>) => {
                                           if (index === 2) {
                                               return {
@@ -477,27 +591,14 @@ export function Results(props: ResultsProps) {
             dataSource: data,
             expandable: {
                 expandedRowRender: (record) => {
-                    const itemValues: DescriptionsProps["items"] = pe.flatMap(
-                        (pe) => {
-                            const year = Number(pe.slice(0, 4));
-                            return currentQuarters.flatMap((quarter) => {
-                                const currentYear =
-                                    quarter === "Q1" || quarter === "Q2"
-                                        ? year
-                                        : year + 1;
-                                const period = `${currentYear}${quarterOrder[quarter]}`;
-                                const comment = record[`${period}comment`];
-
-                                if (comment) {
-                                    return {
-                                        label: `${items?.[pe]?.name} ${quarter}`,
-                                        children: comment,
-                                        key: `${pe}${quarter}`,
-                                    };
-                                }
-                                return [];
-                            });
-                        },
+                    const itemValues: DescriptionsProps["items"] =
+                        buildNarrativeDescriptionItems(
+                            record,
+                            quarterDetails,
+                        );
+                    const attachments = extractAttachments(
+                        record,
+                        quarterDetails,
                     );
                     return (
                         <Flex vertical>
@@ -508,77 +609,107 @@ export function Results(props: ResultsProps) {
                             />
 
                             <Flex>
-                                {pe
-                                    .flatMap((pe) => {
-                                        const year = Number(pe.slice(0, 4));
-                                        return currentQuarters.flatMap(
-                                            (quarter) => {
-                                                const currentYear =
-                                                    quarter === "Q1" ||
-                                                    quarter === "Q2"
-                                                        ? year
-                                                        : year + 1;
-                                                const period = `${currentYear}${quarterOrder[quarter]}`;
-                                                const attachment =
-                                                    record[
-                                                        `${period}attachment`
-                                                    ];
-
-                                                if (attachment) {
-                                                    return attachment;
-                                                }
-                                                return [];
-                                            },
-                                        );
-                                    })
-                                    .map((a) => (
-                                        <AttachmentDownload attachment={a} />
+                                {attachments.map((attachment, index) => (
+                                        <AttachmentDownload
+                                            key={`${record.id ?? record.name ?? "row"}-attachment-${index}`}
+                                            attachment={attachment}
+                                        />
                                     ))}
                             </Flex>
                         </Flex>
                     );
                 },
                 rowExpandable: (record) => {
-                    const allData = pe.flatMap((pe) => {
-                        const year = Number(pe.slice(0, 4));
-                        return currentQuarters.flatMap((quarter) => {
-                            const currentYear =
-                                quarter === "Q1" || quarter === "Q2"
-                                    ? year
-                                    : year + 1;
-                            const period = `${currentYear}${quarterOrder[quarter]}`;
-                            const comment = record[`${period}comment`];
-
-                            if (comment) {
-                                return true;
-                            }
-                            return [];
-                        });
-                    });
-                    return allData.length > 0;
+                    return quarterDetails.some(
+                        ({ period }) =>
+                            String(record[`${period}comment`] ?? "").trim()
+                                .length > 0,
+                    );
                 },
                 defaultExpandAllRows: true,
             },
         }),
-        [data, currentQuarters],
+        [data, quarterDetails],
+    );
+    const sortedTargetData = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: data,
+                columns: columns.get("target"),
+                sortField: sortStateByTab.target.field,
+                sortOrder: sortStateByTab.target.order,
+            }),
+        [columns, data, sortStateByTab.target.field, sortStateByTab.target.order],
+    );
+    const sortedPerformanceData = useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: data,
+                columns: columns.get("performance"),
+                sortField: sortStateByTab.performance.field,
+                sortOrder: sortStateByTab.performance.order,
+            }),
+        [
+            columns,
+            data,
+            sortStateByTab.performance.field,
+            sortStateByTab.performance.order,
+        ],
+    );
+    const sortedTargetColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: columns.get("target"),
+                sortField: sortStateByTab.target.field,
+                sortOrder: sortStateByTab.target.order,
+            }),
+        [columns, sortStateByTab.target.field, sortStateByTab.target.order],
+    );
+    const sortedPerformanceColumns = useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: columns.get("performance"),
+                sortField: sortStateByTab.performance.field,
+                sortOrder: sortStateByTab.performance.order,
+            }),
+        [
+            columns,
+            sortStateByTab.performance.field,
+            sortStateByTab.performance.order,
+        ],
+    );
+    const handleTableChange = React.useCallback(
+        (tableKey: "target" | "performance"): TableProps<AnalyticsData>["onChange"] =>
+            (_pagination, _filters, sorter) => {
+                if (Array.isArray(sorter)) {
+                    return;
+                }
+
+                const field = normalizeSorterField(
+                    sorter.field ?? sorter.columnKey,
+                );
+
+                setSortStateByTab((previous) => ({
+                    ...previous,
+                    [tableKey]:
+                        !field || !sorter.order
+                            ? {}
+                            : {
+                                  field,
+                                  order:
+                                      sorter.order === "descend"
+                                          ? "descend"
+                                          : "ascend",
+                              },
+                }));
+            },
+        [],
     );
 
-    const extractOutcomeComments = (record: any) => {
-        const comments = pe.flatMap((pe) => {
-            const year = Number(pe.slice(0, 4));
-            return currentQuarters.flatMap((quarter) => {
-                const currentYear =
-                    quarter === "Q1" || quarter === "Q2" ? year : year + 1;
-                const period = `${currentYear}${quarterOrder[quarter]}`;
-                const comment = record[`${period}comment`];
-                if (comment) {
-                    return `${year}/${year + 1} ${quarter}:\n ${comment}\n`;
-                }
-                return [];
-            });
-        });
-        return comments.length > 0 ? comments.join("\r") : null;
-    };
+    const extractOutcomeComments = React.useCallback(
+        (record: AnalyticsData) => extractNarrativeText(record, quarterDetails),
+        [quarterDetails],
+    );
     const tabItems: TabsProps["items"] = useMemo(
         () => [
             {
@@ -604,8 +735,8 @@ export function Results(props: ResultsProps) {
                                     builder
 
                                         .addTableWithComments(
-                                            columns.get("target"),
-                                            data,
+                                            sortedTargetColumns,
+                                            sortedTargetData,
                                             extractOutcomeComments,
                                         )
                                         .download(
@@ -623,8 +754,8 @@ export function Results(props: ResultsProps) {
                                     builder
 
                                         .addTableWithComments(
-                                            columns.get("target"),
-                                            data,
+                                            sortedTargetColumns,
+                                            sortedTargetData,
                                             extractOutcomeComments,
                                         )
 
@@ -639,7 +770,9 @@ export function Results(props: ResultsProps) {
                         </Flex>
                         <Table
                             {...tableProps}
-                            columns={columns.get("target")}
+                            columns={sortedTargetColumns}
+                            dataSource={sortedTargetData}
+                            onChange={handleTableChange("target")}
                         />
                     </Flex>
                 ),
@@ -692,7 +825,7 @@ export function Results(props: ResultsProps) {
                                         ]}
                                         value={currentQuarters}
                                         onChange={(val) =>
-                                            setCurrentQuarters(val)
+                                            setCurrentQuarters(val as QuarterKey[])
                                         }
                                         mode="multiple"
                                     />
@@ -709,8 +842,8 @@ export function Results(props: ResultsProps) {
                                         builder
 
                                             .addTableWithComments(
-                                                columns.get("performance"),
-                                                data,
+                                                sortedPerformanceColumns,
+                                                sortedPerformanceData,
                                                 extractOutcomeComments,
                                             )
                                             .download(
@@ -728,8 +861,8 @@ export function Results(props: ResultsProps) {
                                         builder
 
                                             .addTableWithComments(
-                                                columns.get("performance"),
-                                                data,
+                                                sortedPerformanceColumns,
+                                                sortedPerformanceData,
                                                 extractOutcomeComments,
                                             )
 
@@ -745,13 +878,22 @@ export function Results(props: ResultsProps) {
                         </Flex>
                         <Table
                             {...tableProps}
-                            columns={columns.get("performance")}
+                            columns={sortedPerformanceColumns}
+                            dataSource={sortedPerformanceData}
+                            onChange={handleTableChange("performance")}
                         />
                     </Flex>
                 ),
             },
         ],
-        [columns, tableProps],
+        [
+            handleTableChange,
+            sortedPerformanceColumns,
+            sortedPerformanceData,
+            sortedTargetColumns,
+            sortedTargetData,
+            tableProps,
+        ],
     );
 
     return (

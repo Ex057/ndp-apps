@@ -11,6 +11,11 @@ import {
     legendItems,
     processByPerformance,
 } from "../../../../utils";
+import {
+    applySortOrderToColumns,
+    normalizeSorterField,
+    sortRowsByColumn,
+} from "../../../../utils/table-sort";
 import { RootRoute } from "../../../__root";
 import { OverallPerformanceRoute } from "./route";
 
@@ -115,6 +120,10 @@ export function OverallPerformance() {
             };
         }),
     );
+    const [sortField, setSortField] = useState<string>();
+    const [sortOrder, setSortOrder] = useState<
+        "ascend" | "descend" | undefined
+    >();
 
     React.useEffect(() => {
         setFinalData(() =>
@@ -209,50 +218,42 @@ export function OverallPerformance() {
             }),
         },
     ];
+    const sortedRows = React.useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: finalData,
+                columns,
+                sortField,
+                sortOrder,
+            }),
+        [columns, finalData, sortField, sortOrder],
+    );
+    const sortedColumns = React.useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns,
+                sortField,
+                sortOrder,
+            }),
+        [columns, sortField, sortOrder],
+    );
 
-    // const handleChange: TableProps<(typeof finalData)[number]>["onChange"] = (
-    //     _pagination,
-    //     _filters,
-    //     sorter,
-    // ) => {
-    //     if (!Array.isArray(sorter)) {
-    //         const { field, order } = sorter;
-    //         if (field && order) {
-    //             setFinalData((prev) => {
-    //                 return orderBy(
-    //                     prev,
-    //                     [String(field)],
-    //                     [order === "ascend" ? "asc" : "desc"],
-    //                 );
-    //             });
-    //         } else {
-    //             setFinalData(() =>
-    //                 votes.map((vote) => {
-    //                     const outputPerformance = outputData?.get(
-    //                         vote.id,
-    //                     ).totalWeighted;
-    //                     const outcomePerformance = outcomeData?.get(
-    //                         vote.id,
-    //                     ).totalWeighted;
-    //                     const absorptionRate = actionData?.get(
-    //                         vote.id,
-    //                     ).performance;
-    //                     const overallScore =
-    //                         0.4 * outcomePerformance +
-    //                         0.4 * outputPerformance +
-    //                         0.2 * absorptionRate;
-    //                     return {
-    //                         ...vote,
-    //                         outputPerformance,
-    //                         outcomePerformance,
-    //                         absorptionRate,
-    //                         overallScore,
-    //                     };
-    //                 }),
-    //             );
-    //         }
-    //     }
-    // };
+    const handleChange: TableProps<(typeof finalData)[number]>["onChange"] =
+        React.useCallback((_pagination, _filters, sorter) => {
+            if (Array.isArray(sorter)) {
+                return;
+            }
+
+            const field = normalizeSorterField(sorter.field ?? sorter.columnKey);
+            if (!field || !sorter.order) {
+                setSortField(undefined);
+                setSortOrder(undefined);
+                return;
+            }
+
+            setSortField(field);
+            setSortOrder(sorter.order === "descend" ? "descend" : "ascend");
+        }, []);
     return (
         <Flex vertical gap={10}>
             <PerformanceLegend legendItems={legendItems} />
@@ -260,8 +261,8 @@ export function OverallPerformance() {
                 <Button
                     onClick={() =>
                         downloadExcelFromColumns(
-                            columns,
-                            finalData,
+                            sortedColumns,
+                            sortedRows,
                             "performance-report.xlsx",
                         )
                     }
@@ -271,15 +272,15 @@ export function OverallPerformance() {
                 </Button>
             </Flex>
             <Table
-                columns={columns}
-                dataSource={finalData}
+                columns={sortedColumns}
+                dataSource={sortedRows}
                 scroll={{ y: "calc(100vh - 242px)" }}
                 rowKey="orgUnit"
                 bordered={true}
                 tableLayout="auto"
                 pagination={false}
                 size="small"
-                // onChange={handleChange}
+                onChange={handleChange}
             />
         </Flex>
     );

@@ -26,6 +26,7 @@ import { OrgUnitSelect } from "../../../../components/organisation";
 import {
     reportingRateSummariesQueryOptions,
     type ReportingRateProgrammeExpandedRow,
+    type ReportingRateSummaryPeriodSummary,
     type ReportingRateSummaryRow,
 } from "../../../../query-options";
 import { RootRoute } from "../../../__root";
@@ -759,6 +760,78 @@ function getSelectedPeriodCellStyle(): React.CSSProperties {
     };
 }
 
+function buildFinancialYearExpandedSummary(
+    expandedRow: ReportingRateProgrammeExpandedRow,
+): ReportingRateSummaryPeriodSummary | null {
+    const summaries = QUARTER_KEYS.map((quarter) =>
+        buildExpandedPeriodSummary(expandedRow, quarter),
+    ).filter(
+        (summary): summary is ReportingRateSummaryPeriodSummary =>
+            summary !== null,
+    );
+
+    if (summaries.length === 0) {
+        return null;
+    }
+
+    const numerator = summaries.reduce(
+        (sum, summary) => sum + summary.numerator,
+        0,
+    );
+    const denominator = summaries.reduce(
+        (sum, summary) => sum + summary.denominator,
+        0,
+    );
+
+    const rate = denominator > 0 ? (numerator / denominator) * 100 : 0;
+    const performanceBand: Band =
+        rate >= 100 ? "green" : rate >= 75 ? "yellow" : "red";
+
+    return {
+        numerator,
+        denominator,
+        rate,
+        display: `${Math.round(rate)}%`,
+        performanceBand,
+    };
+}
+
+function buildExpandedPeriodSummary(
+    expandedRow: ReportingRateProgrammeExpandedRow,
+    periodKey: PeriodColumnKey,
+): ReportingRateSummaryPeriodSummary | null {
+    if (periodKey === "financialYear") {
+        return buildFinancialYearExpandedSummary(expandedRow);
+    }
+
+    const summaries = Object.values(
+        expandedRow.indicatorGroupTypeSummariesByPeriod[periodKey],
+    );
+
+    if (summaries.length === 0) {
+        return null;
+    }
+
+    const numerator = summaries.reduce(
+        (sum, summary) => sum + summary.numerator,
+        0,
+    );
+    const denominator = summaries.reduce(
+        (sum, summary) => sum + summary.denominator,
+        0,
+    );
+    const rate = denominator > 0 ? (numerator / denominator) * 100 : 0;
+
+    return {
+        numerator,
+        denominator,
+        rate,
+        display: denominator === 0 ? "-" : `${Math.round(rate)}% (${numerator}/${denominator})`,
+        performanceBand:
+            rate >= 100 ? "green" : rate >= 75 ? "yellow" : "red",
+    };
+}
+
 function makeTextColumn(
     title: string,
     dataIndex: keyof ReportingRateSummaryRow,
@@ -802,11 +875,17 @@ function makePeriodColumn(
                     ? getSelectedPeriodCellStyle()
                     : getBandCellStyle(record.periodSummaries[periodKey].performanceBand)),
                 cursor:
-                    record.programmeExpandedRows.length > 0 ? "pointer" : "default",
+                    periodKey !== "financialYear" &&
+                    record.programmeExpandedRows.length > 0
+                        ? "pointer"
+                        : "default",
             },
             onClick: (event: React.MouseEvent) => {
                 event.stopPropagation();
-                if (record.programmeExpandedRows.length === 0) {
+                if (
+                    periodKey === "financialYear" ||
+                    record.programmeExpandedRows.length === 0
+                ) {
                     return;
                 }
                 setSelectedPeriodByRowKey((current) => {
@@ -851,6 +930,79 @@ function ProgrammeExpandedTable({
     record: ReportingRateSummaryRow;
     selectedPeriod: PeriodColumnKey;
 }) {
+    const isFinancialYear = selectedPeriod === "financialYear";
+    const expandedColumns: TableProps<ReportingRateProgrammeExpandedRow>["columns"] =
+        [
+            {
+                title: "MDA/LG",
+                dataIndex: "orgUnitName",
+                key: "orgUnitName",
+                width: 240,
+            },
+            ...(isFinancialYear
+                ? ([...QUARTER_KEYS, "financialYear"] as PeriodColumnKey[]).map(
+                      (periodKey) => ({
+                      title:
+                          periodKey === "financialYear"
+                              ? "Financial Year %"
+                              : `${periodKey} %`,
+                      key: periodKey,
+                      width: 170,
+                      align: "center" as const,
+                      onCell: (
+                          expandedRow: ReportingRateProgrammeExpandedRow,
+                      ) => {
+                          const summary = buildExpandedPeriodSummary(
+                              expandedRow,
+                              periodKey,
+                          );
+                          return {
+                              style: {
+                                  ...getSharedCellStyle(170),
+                                  ...(summary
+                                      ? getBandCellStyle(summary.performanceBand)
+                                      : {}),
+                              },
+                          };
+                      },
+                      render: (
+                          _: unknown,
+                          expandedRow: ReportingRateProgrammeExpandedRow,
+                      ) =>
+                          buildExpandedPeriodSummary(expandedRow, periodKey)
+                              ?.display || "-",
+                  }),
+                  )
+                : indicatorGroupTypes.map((type) => ({
+                      title: formatIndicatorGroupTypeLabel(type),
+                      key: type,
+                      width: 170,
+                      align: "center" as const,
+                      onCell: (
+                          expandedRow: ReportingRateProgrammeExpandedRow,
+                      ) => {
+                          const summary =
+                              expandedRow.indicatorGroupTypeSummariesByPeriod[
+                                  selectedPeriod
+                              ]?.[type];
+                          return {
+                              style: {
+                                  ...getSharedCellStyle(170),
+                                  ...(summary
+                                      ? getBandCellStyle(summary.performanceBand)
+                                      : {}),
+                              },
+                          };
+                      },
+                      render: (
+                          _: unknown,
+                          expandedRow: ReportingRateProgrammeExpandedRow,
+                      ) =>
+                          expandedRow.indicatorGroupTypeSummariesByPeriod[
+                              selectedPeriod
+                          ]?.[type]?.display || "-",
+                  }))),
+        ];
     return (
         <div>
             <div
@@ -870,43 +1022,7 @@ function ProgrammeExpandedTable({
                 pagination={false}
                 dataSource={record.programmeExpandedRows}
                 scroll={{ x: "max-content" }}
-                columns={[
-                    {
-                        title: "MDA/LG",
-                        dataIndex: "orgUnitName",
-                        key: "orgUnitName",
-                        width: 240,
-                    },
-                    ...indicatorGroupTypes.map((type) => ({
-                        title: formatIndicatorGroupTypeLabel(type),
-                        key: type,
-                        width: 170,
-                        align: "center" as const,
-                        onCell: (
-                            expandedRow: ReportingRateProgrammeExpandedRow,
-                        ) => {
-                            const summary =
-                                expandedRow.indicatorGroupTypeSummariesByPeriod[
-                                    selectedPeriod
-                                ]?.[type];
-                            return {
-                                style: {
-                                    ...getSharedCellStyle(170),
-                                    ...(summary
-                                        ? getBandCellStyle(summary.performanceBand)
-                                        : {}),
-                                },
-                            };
-                        },
-                        render: (
-                            _: unknown,
-                            expandedRow: ReportingRateProgrammeExpandedRow,
-                        ) =>
-                            expandedRow.indicatorGroupTypeSummariesByPeriod[
-                                selectedPeriod
-                            ]?.[type]?.display || "-",
-                    })),
-                ]}
+                columns={expandedColumns}
             />
         </div>
     );

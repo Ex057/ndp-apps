@@ -5,6 +5,11 @@ import { ExcelBuilder } from "../excel-builder";
 import { RootRoute } from "../routes/__root";
 import { AnalyticsData } from "../types";
 import { PERFORMANCE_COLORS, processByPerformance } from "../utils";
+import {
+    applySortOrderToColumns,
+    normalizeSorterField,
+    sortRowsByColumn,
+} from "../utils/table-sort";
 
 export default function Performance({
     data,
@@ -20,12 +25,25 @@ export default function Performance({
     showDownload?: boolean;
 }) {
     const { programs, votes } = RootRoute.useLoaderData();
+    const [sortField, setSortField] = React.useState<string>();
+    const [sortOrder, setSortOrder] = React.useState<
+        "ascend" | "descend" | undefined
+    >();
     const handleChange: TableProps<AnalyticsData>["onChange"] = (
         _pagination,
         _filters,
         sorter,
     ) => {
         if (!Array.isArray(sorter)) {
+            const field = normalizeSorterField(sorter.field ?? sorter.columnKey);
+            if (!field || !sorter.order) {
+                setSortField(undefined);
+                setSortOrder(undefined);
+                return;
+            }
+
+            setSortField(field);
+            setSortOrder(sorter.order === "descend" ? "descend" : "ascend");
         }
     };
     const columns: TableProps<AnalyticsData>["columns"] = React.useMemo(() => {
@@ -154,6 +172,40 @@ export default function Performance({
             },
         ];
     }, []);
+    const mergedColumns = React.useMemo(
+        () => (initialColumns ?? []).concat(columns),
+        [columns, initialColumns],
+    );
+    const processedRows = React.useMemo(
+        () =>
+            processByPerformance({
+                dataElements: data,
+                groupingBy,
+                programs,
+                pe,
+                votes,
+            }),
+        [data, groupingBy, pe, programs, votes],
+    );
+    const sortedRows = React.useMemo(
+        () =>
+            sortRowsByColumn({
+                rows: processedRows,
+                columns: mergedColumns,
+                sortField,
+                sortOrder,
+            }),
+        [mergedColumns, processedRows, sortField, sortOrder],
+    );
+    const sortedColumns = React.useMemo(
+        () =>
+            applySortOrderToColumns({
+                columns: mergedColumns,
+                sortField,
+                sortOrder,
+            }),
+        [mergedColumns, sortField, sortOrder],
+    );
 
     return (
         <Flex vertical gap="16px">
@@ -177,16 +229,7 @@ export default function Performance({
                             builder
                                 .addSpacer(1)
 
-                                .addTable(
-                                    (initialColumns ?? []).concat(columns),
-                                    processByPerformance({
-                                        dataElements: data,
-                                        groupingBy,
-                                        programs,
-                                        pe,
-                                        votes,
-                                    }),
-                                )
+                                .addTable(sortedColumns, sortedRows)
 
                                 .download("Vote_Flash_Report.xlsx");
                         }}
@@ -196,14 +239,8 @@ export default function Performance({
                 </Flex>
             )}
             <Table
-                columns={(initialColumns ?? []).concat(columns)}
-                dataSource={processByPerformance({
-                    dataElements: data,
-                    groupingBy,
-                    programs,
-                    pe,
-                    votes,
-                })}
+                columns={sortedColumns}
+                dataSource={sortedRows}
                 scroll={{ y: "calc(100vh - 400px)" }}
                 rowKey="id"
                 bordered={true}
