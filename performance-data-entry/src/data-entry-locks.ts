@@ -34,7 +34,6 @@ export function isDataEntryColumnLocked({
     locks,
     dataSet,
     categoryOptionName,
-    reportingPeriod,
     organisationUnitId,
     fallbackLocked,
     now = Date.now(),
@@ -42,21 +41,15 @@ export function isDataEntryColumnLocked({
     locks?: DataEntryLocks;
     dataSet: Pick<IDataSet, "id" | "name">;
     categoryOptionName: string;
-    reportingPeriod: string;
     organisationUnitId: string;
     fallbackLocked: boolean;
     now?: number;
 }) {
     const section = getDataEntrySection(dataSet);
-    const column = classifyDataEntryColumn(categoryOptionName, section);
-    if (!column) return fallbackLocked;
-
     const rule = [...(locks?.rules ?? [])].reverse().find((candidate) => {
         return (
             candidate.enabled &&
             candidate.section === section &&
-            candidate.reportingPeriod === reportingPeriod &&
-            candidate.columns?.includes(column) &&
             ((candidate.organisationUnitIds?.length ?? 0) === 0 ||
                 candidate.organisationUnitIds?.includes(organisationUnitId)) &&
             ((candidate.dataSetIds?.length ?? 0) === 0 ||
@@ -65,6 +58,9 @@ export function isDataEntryColumnLocked({
     });
 
     if (!rule) return fallbackLocked;
+    const column = classifyDataEntryColumn(categoryOptionName, section);
+    if (!column) return fallbackLocked;
+    if (!rule.columns?.includes(column)) return false;
     if (rule.mode === "open") return false;
     if (rule.mode === "locked") return true;
 
@@ -75,13 +71,11 @@ export function isDataEntryColumnLocked({
 export function getNextLockDeadline({
     locks,
     dataSet,
-    reportingPeriod,
     organisationUnitId,
     now = Date.now(),
 }: {
     locks?: DataEntryLocks;
     dataSet: Pick<IDataSet, "id" | "name">;
-    reportingPeriod: string;
     organisationUnitId: string;
     now?: number;
 }) {
@@ -91,7 +85,6 @@ export function getNextLockDeadline({
             (rule) =>
                 rule.enabled &&
                 rule.section === section &&
-                rule.reportingPeriod === reportingPeriod &&
                 rule.mode === "scheduled" &&
                 ((rule.organisationUnitIds?.length ?? 0) === 0 ||
                     rule.organisationUnitIds?.includes(organisationUnitId)) &&

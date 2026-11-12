@@ -1,5 +1,4 @@
 import { useDataEngine } from "@dhis2/app-runtime";
-import { createFixedPeriodFromPeriodId } from "@dhis2/multi-calendar-dates";
 import {
     Alert,
     Button,
@@ -32,7 +31,6 @@ type VoteScope = "all" | "selected";
 
 type DataEntryLockRule = {
     id: string;
-    reportingPeriod: string;
     organisationUnitIds: string[];
     dataSetIds: string[];
     section: DataEntrySection;
@@ -49,10 +47,6 @@ type DataEntryLocks = {
 };
 
 type NDPConfiguration = {
-    baseline?: string;
-    activeQuarters?: string[];
-    activeFinancialYears?: string[];
-    financialYears?: string[];
     dataEntryLocks?: DataEntryLocks;
     [key: string]: unknown;
 };
@@ -72,17 +66,6 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const KAMPALA_TIME_ZONE = "Africa/Kampala";
-
-function formatPeriodLabel(periodId: string) {
-    try {
-        return createFixedPeriodFromPeriodId({
-            periodId,
-            calendar: "iso8601",
-        }).name;
-    } catch (error) {
-        return periodId;
-    }
-}
 
 const sectionOptions: Record<
     DataEntrySection,
@@ -135,7 +118,6 @@ export default function DataEntryLockConfiguration({
 }) {
     const options = sectionOptions[section];
     const [selectedVersion, setSelectedVersion] = useState<string>();
-    const [reportingPeriod, setReportingPeriod] = useState<string>();
     const [columns, setColumns] = useState<LockColumn[]>(
         options.defaultColumns,
     );
@@ -156,7 +138,6 @@ export default function DataEntryLockConfiguration({
         );
 
         setSelectedVersion(versionCode);
-        setReportingPeriod(rule?.reportingPeriod);
         setColumns(rule?.columns ?? options.defaultColumns);
         setVoteScope(
             rule?.organisationUnitIds?.length ? "selected" : "all",
@@ -177,10 +158,6 @@ export default function DataEntryLockConfiguration({
             messageApi.warning("Select an NDP version");
             return;
         }
-        if (!reportingPeriod) {
-            messageApi.warning("Select a reporting period");
-            return;
-        }
         if (voteScope === "selected" && selectedVoteIds.length === 0) {
             messageApi.warning("Select at least one Vote");
             return;
@@ -198,7 +175,6 @@ export default function DataEntryLockConfiguration({
         const existingRules = configuration.dataEntryLocks?.rules ?? [];
         const nextRule: DataEntryLockRule = {
             id: options.ruleId,
-            reportingPeriod,
             organisationUnitIds:
                 voteScope === "selected" ? selectedVoteIds : [],
             dataSetIds: [],
@@ -250,48 +226,6 @@ export default function DataEntryLockConfiguration({
         }
     };
 
-    const selectedConfiguration = selectedVersion
-        ? configurations[selectedVersion]?.data
-        : undefined;
-    const annualPeriods = Array.from(
-        new Set([
-            ...(selectedConfiguration?.baseline
-                ? [selectedConfiguration.baseline]
-                : []),
-            ...(selectedConfiguration?.financialYears ?? []),
-            ...(selectedConfiguration?.activeFinancialYears ?? []),
-        ]),
-    );
-    const quarterlyPeriods = Array.from(
-        new Set(selectedConfiguration?.activeQuarters ?? []),
-    );
-    const reportingPeriodOptions = [
-        ...(annualPeriods.length > 0
-            ? [
-                  {
-                      label: "Financial years",
-                      options: annualPeriods.map((period) => ({
-                          label: `${formatPeriodLabel(period)} (${period})`,
-                          value: period,
-                      })),
-                  },
-              ]
-            : []),
-        ...(quarterlyPeriods.length > 0
-            ? [
-                  {
-                      label: "Quarters",
-                      options: quarterlyPeriods.map((period) => ({
-                          label: `${formatPeriodLabel(period)} (${period})`,
-                          value: period,
-                      })),
-                  },
-              ]
-            : []),
-    ];
-    const selectedPeriodLabel = reportingPeriod
-        ? formatPeriodLabel(reportingPeriod)
-        : undefined;
     const lockDeadline = lockAt?.valueOf();
     const isScheduledClosed =
         lockMode === "scheduled" &&
@@ -311,7 +245,7 @@ export default function DataEntryLockConfiguration({
                 color: "success",
                 alertType: "success" as const,
                 description:
-                    "The selected columns are open for the matching period and Vote scope.",
+                    "The selected columns are open for the matching NDP version and Vote scope.",
             }
           : lockMode === "locked" || isScheduledClosed
             ? {
@@ -321,7 +255,7 @@ export default function DataEntryLockConfiguration({
                   description:
                       lockMode === "scheduled" && lockAt
                           ? `The selected columns closed on ${lockAt.format("DD MMM YYYY, HH:mm")} Africa/Kampala time.`
-                          : "The selected columns are closed for the matching period and Vote scope.",
+                          : "The selected columns are closed for the matching NDP version and Vote scope.",
               }
             : lockAt
               ? {
@@ -338,7 +272,6 @@ export default function DataEntryLockConfiguration({
                         "Choose a lock date and time before saving this scheduled rule.",
                 };
     const draftSignature = JSON.stringify({
-        reportingPeriod,
         organisationUnitIds:
             voteScope === "selected" ? selectedVoteIds : [],
         columns,
@@ -356,7 +289,6 @@ export default function DataEntryLockConfiguration({
     });
     const savedSignature = savedRule
         ? JSON.stringify({
-              reportingPeriod: savedRule.reportingPeriod,
               organisationUnitIds: savedRule.organisationUnitIds ?? [],
               columns: savedRule.columns,
               mode: savedRule.mode,
@@ -374,10 +306,9 @@ export default function DataEntryLockConfiguration({
                     type="info"
                     showIcon
                     message="Applied in Performance Data Entry"
-                    description="A matching saved rule controls these columns for the selected period and Vote scope. Where no rule matches, the existing greyed-out column behavior remains in place."
+                    description="A matching saved rule controls these columns for the selected NDP version and Vote scope across all reporting periods. Where no rule matches, the existing greyed-out column behavior remains in place."
                 />
-                <Flex gap={16} wrap>
-                    <Flex vertical gap={6} style={{ minWidth: 260, flex: 1 }}>
+                <Flex vertical gap={6} style={{ maxWidth: 360 }}>
                         <Typography.Text strong>NDP version</Typography.Text>
                         <Select
                             placeholder="Select NDP version"
@@ -388,27 +319,6 @@ export default function DataEntryLockConfiguration({
                                 value: version.code,
                             }))}
                         />
-                    </Flex>
-                    <Flex vertical gap={6} style={{ minWidth: 260, flex: 1 }}>
-                        <Typography.Text strong>
-                            Reporting period
-                        </Typography.Text>
-                        <Select
-                            showSearch
-                            optionFilterProp="label"
-                            placeholder="Select a financial year or quarter"
-                            value={reportingPeriod}
-                            disabled={!selectedVersion}
-                            onChange={setReportingPeriod}
-                            options={reportingPeriodOptions}
-                            notFoundContent="No configured periods"
-                        />
-                        {reportingPeriod && (
-                            <Typography.Text type="secondary">
-                                Selected: {selectedPeriodLabel} — {reportingPeriod}
-                            </Typography.Text>
-                        )}
-                    </Flex>
                 </Flex>
                 <Flex vertical gap={8}>
                     <Typography.Text strong>Vote scope</Typography.Text>
@@ -489,7 +399,7 @@ export default function DataEntryLockConfiguration({
                     <Switch checked={ruleEnabled} onChange={setRuleEnabled} />
                     <Typography.Text>Configuration enabled</Typography.Text>
                 </Flex>
-                {selectedVersion && reportingPeriod && (
+                {selectedVersion && (
                     <Alert
                         type={status.alertType}
                         showIcon
@@ -506,7 +416,7 @@ export default function DataEntryLockConfiguration({
                     />
                 )}
                 <Typography.Text type="secondary">
-                    Current scope: {voteScope === "all" ? "all Votes" : `${selectedVoteIds.length} selected Vote(s)`} and all {options.datasetDescription} for the selected version and period.
+                    Current scope: {voteScope === "all" ? "all Votes" : `${selectedVoteIds.length} selected Vote(s)`} and all {options.datasetDescription} for the selected NDP version across all reporting periods.
                 </Typography.Text>
                 <Flex>
                     <Button type="primary" loading={saving} onClick={saveRule}>

@@ -31,7 +31,7 @@ function Component() {
                 }),
             });
         }
-    }, []);
+    }, [categories, category, categoryOptions, navigate]);
     return (
         <Flex vertical gap={10} style={{ padding: 10, height: "100%" }}>
             <Filter

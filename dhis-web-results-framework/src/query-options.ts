@@ -211,6 +211,36 @@ export const queryDataElements = async ({
     });
 };
 
+export const programmeFilterDataElementsQueryOptions = ({
+    ndpVersion,
+    attributeValue,
+    program,
+    ou,
+}: {
+    ndpVersion?: string;
+    attributeValue: string;
+    program?: string;
+    ou?: string;
+}) =>
+    queryOptions({
+        queryKey: [
+            "programme-filter-data-elements",
+            ndpVersion,
+            attributeValue,
+            program,
+            ou,
+        ],
+        queryFn: () =>
+            queryDataElements({
+                ndpVersion: ndpVersion ?? "",
+                attributeValue,
+                program,
+                ou: ou ?? "",
+                requiresProgram: true,
+            }),
+        enabled: Boolean(ndpVersion && program && ou),
+    });
+
 export const queryAnalytics = async ({
     pe,
     quarters,
@@ -532,7 +562,7 @@ export const initialQueryOptions = (
                 orgUnits: {
                     resource: "me",
                     params: {
-                        fields: "organisationUnits[id,name,leaf],dataViewOrganisationUnits[id,name,leaf]",
+                        fields: "organisationUnits[id,name,leaf],dataViewOrganisationUnits[id,name,leaf],authorities",
                     },
                 },
                 options: {
@@ -562,6 +592,7 @@ export const initialQueryOptions = (
             const {
                 orgUnits: {
                     organisationUnits: assignedOrganisationUnits,
+                    authorities,
                 },
                 options,
                 categories: { categories },
@@ -570,6 +601,7 @@ export const initialQueryOptions = (
                 orgUnits: {
                     organisationUnits: DHIS2OrgUnit[];
                     dataViewOrganisationUnits: DHIS2OrgUnit[];
+                    authorities: string[];
                 };
                 options: { optionSets: OptionSet[] };
                 categories: {
@@ -673,6 +705,9 @@ export const initialQueryOptions = (
                     return true;
                 }),
                 allAreLeaves,
+                canManageDataEntryLocks:
+                    (authorities ?? []).includes("ALL") ||
+                    (authorities ?? []).includes("NDP_DATA_ENTRY_LOCKER"),
                 allOptionsMap: all,
             };
         },

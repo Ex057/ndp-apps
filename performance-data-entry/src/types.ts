@@ -27,7 +27,7 @@ export type DataEntryLockMode = "open" | "locked" | "scheduled";
 
 export interface DataEntryLockRule {
     id: string;
-    reportingPeriod: string;
+    reportingPeriod?: string;
     organisationUnitIds: string[];
     dataSetIds: string[];
     section: DataEntrySection;

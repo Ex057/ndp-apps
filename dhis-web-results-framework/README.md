@@ -59,6 +59,15 @@ by Git and remains available only on the machine where it was built.
 
 See the section about [building](https://platform.dhis2.nu/#/scripts/build) for more information.
 
+### Data Entry Locking access
+
+Installing this app registers the custom authority
+`NDP_DATA_ENTRY_LOCKER`. In DHIS2, open the Users app, create a user role named
+`Entry Locker`, assign this custom authority to the role, and then assign the
+role to the administrators who should manage Data Entry Locking Configuration.
+Users without the authority cannot see or use that settings section. Users
+with the `ALL` authority retain access.
+
 ### `yarn deploy`
 
 Deploys the built app in the `build` folder to a running DHIS2 instance.<br />

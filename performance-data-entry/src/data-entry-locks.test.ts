@@ -12,7 +12,6 @@ const locks: DataEntryLocks = {
     rules: [
         {
             id: "results-default",
-            reportingPeriod: "2026Q1",
             organisationUnitIds: ["selected-vote"],
             dataSetIds: [],
             section: "results",
@@ -44,7 +43,6 @@ describe("data-entry lock policies", () => {
                 locks,
                 dataSet,
                 categoryOptionName: "Target",
-                reportingPeriod: "2026Q1",
                 organisationUnitId: "selected-vote",
                 fallbackLocked: false,
             }),
@@ -54,7 +52,6 @@ describe("data-entry lock policies", () => {
                 locks,
                 dataSet,
                 categoryOptionName: "Target",
-                reportingPeriod: "2026Q1",
                 organisationUnitId: "another-vote",
                 fallbackLocked: false,
             }),
@@ -70,7 +67,6 @@ describe("data-entry lock policies", () => {
                 },
                 dataSet,
                 categoryOptionName: "Baseline",
-                reportingPeriod: "2026Q1",
                 organisationUnitId: "selected-vote",
                 fallbackLocked: true,
             }),
@@ -92,7 +88,6 @@ describe("data-entry lock policies", () => {
             locks: scheduledLocks,
             dataSet,
             categoryOptionName: "Target",
-            reportingPeriod: "2026Q1",
             organisationUnitId: "selected-vote",
             fallbackLocked: true,
         };
@@ -117,9 +112,72 @@ describe("data-entry lock policies", () => {
                 locks,
                 dataSet,
                 categoryOptionName: "Actual",
-                reportingPeriod: "2026Q1",
                 organisationUnitId: "selected-vote",
                 fallbackLocked: true,
+            }),
+        ).toBe(true);
+    });
+
+    it("opens an unchecked first column when only the second column is locked", () => {
+        const targetOnlyLocks: DataEntryLocks = {
+            ...locks,
+            rules: [{ ...locks.rules[0], columns: ["target"] }],
+        };
+
+        expect(
+            isDataEntryColumnLocked({
+                locks: targetOnlyLocks,
+                dataSet,
+                categoryOptionName: "Baseline",
+                organisationUnitId: "selected-vote",
+                fallbackLocked: true,
+            }),
+        ).toBe(false);
+        expect(
+            isDataEntryColumnLocked({
+                locks: targetOnlyLocks,
+                dataSet,
+                categoryOptionName: "Target",
+                organisationUnitId: "selected-vote",
+                fallbackLocked: true,
+            }),
+        ).toBe(true);
+    });
+
+    it("locks Budget Approved without also locking Budget Planned", () => {
+        const actionDataSet = { id: "actions", name: "Programme Actions" };
+        const actionLocks: DataEntryLocks = {
+            version: 1,
+            rules: [
+                {
+                    id: "actions-default",
+                    organisationUnitIds: [],
+                    dataSetIds: [],
+                    section: "actions",
+                    columns: ["budgetApproved"],
+                    mode: "locked",
+                    enabled: true,
+                    updatedAt: "2026-11-12T10:00:00.000Z",
+                },
+            ],
+        };
+
+        expect(
+            isDataEntryColumnLocked({
+                locks: actionLocks,
+                dataSet: actionDataSet,
+                categoryOptionName: "Budget Planned",
+                organisationUnitId: "selected-vote",
+                fallbackLocked: true,
+            }),
+        ).toBe(false);
+        expect(
+            isDataEntryColumnLocked({
+                locks: actionLocks,
+                dataSet: actionDataSet,
+                categoryOptionName: "Budget Approved",
+                organisationUnitId: "selected-vote",
+                fallbackLocked: false,
             }),
         ).toBe(true);
     });

@@ -83,7 +83,6 @@ export function generateGroupedColumns({
                         locks: dataEntryLocks,
                         dataSet,
                         categoryOptionName: name,
-                        reportingPeriod: pe,
                         organisationUnitId: ou,
                         fallbackLocked: index < indexToLock,
                         now,

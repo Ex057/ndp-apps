@@ -1,12 +1,13 @@
 import { createRoute, Outlet } from "@tanstack/react-router";
 import React, { useEffect } from "react";
-import { Flex } from "antd";
+import { Alert, Flex } from "antd";
 import Filter from "../../../../components/Filter";
 import { GoalValidator } from "../../../../types";
 import { RootRoute } from "../../../__root";
 import { NDPRoute } from "../route";
-import { queryDataElements } from "../../../../query-options";
+import { programmeFilterDataElementsQueryOptions } from "../../../../query-options";
 import { uniqBy } from "lodash";
+import { useQuery } from "@tanstack/react-query";
 
 export const SubProgramOutputRoute = createRoute({
     getParentRoute: () => NDPRoute,
@@ -22,23 +23,15 @@ function Component() {
     const { objective, ou, pe, program, category, categoryOptions } = search;
 
     const navigate = SubProgramOutputRoute.useNavigate();
-    const [objectives, setObjectives] = React.useState<any[]>([]);
-
-    useEffect(() => {
-        let isMounted = true;
-        async function loadObjectives() {
-            const result = await queryDataElements({
-                ...search,
-                attributeValue: "output",
-                ndpVersion: search.v,
-            });
-            if (isMounted) setObjectives(result);
-        }
-        loadObjectives();
-        return () => {
-            isMounted = false;
-        };
-    }, [search.program]);
+    const interventionsQuery = useQuery(
+        programmeFilterDataElementsQueryOptions({
+            ndpVersion: search.v,
+            attributeValue: "output",
+            program,
+            ou,
+        }),
+    );
+    const objectives = interventionsQuery.data ?? [];
     useEffect(() => {
         if (categoryOptions === undefined) {
             navigate({
@@ -48,7 +41,7 @@ function Component() {
                 }),
             });
         }
-    }, []);
+    }, [categories, category, categoryOptions, navigate]);
     return (
         <Flex vertical gap={10} style={{ padding: 10, height: "100%" }}>
             <Filter
@@ -83,18 +76,42 @@ function Component() {
                     {
                         key: "objective",
                         options: uniqBy(
-                            objectives.map(({ LKWITZXQD9l }) => ({
-                                value: LKWITZXQD9l,
-                                label:
-                                    allOptionsMap.get(LKWITZXQD9l) ||
-                                    LKWITZXQD9l,
-                            })),
+                            objectives.flatMap((dataElement) => {
+                                const intervention = dataElement[
+                                    "LKWITZXQD9l"
+                                ] as string | undefined;
+                                if (!intervention) return [];
+                                return {
+                                    value: intervention,
+                                    label:
+                                        allOptionsMap.get(intervention) ||
+                                        intervention,
+                                };
+                            }),
                             "value",
                         ),
                         label: "Program Intervention",
+                        loading: interventionsQuery.isFetching,
+                        disabled: !program || interventionsQuery.isFetching,
+                        error: interventionsQuery.isError,
+                        emptyText: program
+                            ? "No programme interventions found"
+                            : "Select an NDP Programme first",
                     },
                 ]}
             />
+            {interventionsQuery.isError && (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Programme interventions could not be loaded"
+                    action={
+                        <a onClick={() => interventionsQuery.refetch()}>
+                            Retry
+                        </a>
+                    }
+                />
+            )}
             <Outlet />
         </Flex>
     );

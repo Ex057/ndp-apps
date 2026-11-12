@@ -137,7 +137,6 @@ export default function CategoryCombo({
         const deadline = getNextLockDeadline({
             locks: dataEntryLocks,
             dataSet,
-            reportingPeriod: pe,
             organisationUnitId: ou,
         });
         if (!deadline) return;
@@ -147,7 +146,7 @@ export default function CategoryCombo({
             Math.min(deadline - Date.now() + 50, 2_147_483_647),
         );
         return () => window.clearTimeout(timeout);
-    }, [dataEntryLocks, dataSet.id, dataSet.name, pe, ou, lockRevision]);
+    }, [dataEntryLocks, dataSet.id, dataSet.name, ou, lockRevision]);
 
     const columns = useMemo(
         () =>

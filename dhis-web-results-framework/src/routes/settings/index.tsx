@@ -27,9 +27,12 @@ export const SettingsIndexRoute = createRoute({
 
 function Component() {
     const { engine } = SettingsIndexRoute.useRouteContext();
-    const { ndpVersions, configurations, votes } = useLoaderData({
-        from: "__root__",
-    });
+    const {
+        ndpVersions,
+        configurations,
+        votes,
+        canManageDataEntryLocks,
+    } = useLoaderData({ from: "__root__" });
     const [selectedDataEntrySection, setSelectedDataEntrySection] =
         useState<DataEntrySection>();
 
@@ -144,39 +147,43 @@ function Component() {
                 columns={columns}
                 rowKey="code"
             />
-            <Card title="Data Entry Locking Configuration">
-                <Flex vertical gap={12}>
-                    <Typography.Text>
-                        Select the dataset section to configure. Saved matching
-                        rules are enforced by Performance Data Entry; the
-                        existing locking behavior remains the fallback where no
-                        rule matches.
-                    </Typography.Text>
-                    <Flex vertical gap={6} style={{ maxWidth: 360 }}>
-                        <Typography.Text strong>Dataset section</Typography.Text>
-                        <Select<DataEntrySection>
-                            allowClear
-                            placeholder="Select Results or Actions"
-                            value={selectedDataEntrySection}
-                            onChange={setSelectedDataEntrySection}
-                            options={[
-                                { label: "Results", value: "results" },
-                                { label: "Actions", value: "actions" },
-                            ]}
-                        />
+            {canManageDataEntryLocks && (
+                <Card title="Data Entry Locking Configuration">
+                    <Flex vertical gap={12}>
+                        <Typography.Text>
+                            Select the dataset section to configure. Saved
+                            matching rules are enforced by Performance Data
+                            Entry; the existing locking behavior remains the
+                            fallback where no rule matches.
+                        </Typography.Text>
+                        <Flex vertical gap={6} style={{ maxWidth: 360 }}>
+                            <Typography.Text strong>
+                                Dataset section
+                            </Typography.Text>
+                            <Select<DataEntrySection>
+                                allowClear
+                                placeholder="Select Results or Actions"
+                                value={selectedDataEntrySection}
+                                onChange={setSelectedDataEntrySection}
+                                options={[
+                                    { label: "Results", value: "results" },
+                                    { label: "Actions", value: "actions" },
+                                ]}
+                            />
+                        </Flex>
+                        {selectedDataEntrySection && (
+                            <DataEntryLockConfiguration
+                                key={selectedDataEntrySection}
+                                section={selectedDataEntrySection}
+                                ndpVersions={ndpVersions}
+                                configurations={configurations}
+                                votes={votes}
+                                engine={engine}
+                            />
+                        )}
                     </Flex>
-                    {selectedDataEntrySection && (
-                        <DataEntryLockConfiguration
-                            key={selectedDataEntrySection}
-                            section={selectedDataEntrySection}
-                            ndpVersions={ndpVersions}
-                            configurations={configurations}
-                            votes={votes}
-                            engine={engine}
-                        />
-                    )}
-                </Flex>
-            </Card>
+                </Card>
+            )}
         </Flex>
     );
 }

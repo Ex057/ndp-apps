@@ -11,7 +11,6 @@ export const SubProgramOutputIndexRoute = createRoute({
     path: "/",
     getParentRoute: () => SubProgramOutputRoute,
     component: Component,
-    errorComponent: () => <div>{null}</div>,
 });
 
 function Component() {
@@ -55,7 +54,7 @@ function Component() {
                 },
             ],
         }),
-        [data, onChange, search],
+        [allOptionsMap, data, dimensions, items, onChange, search],
     );
 
     return <Results {...resultsProps} />;

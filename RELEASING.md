@@ -38,3 +38,21 @@ DHIS2 App Management.
 
 No DHIS2 credentials are stored in GitHub and these workflows do not deploy to
 training or production automatically.
+
+Each Git tag creates a new GitHub Release; it does not replace earlier releases.
+The workflow is:
+
+1. Push commits to `main`.
+2. GitHub Actions builds test artifacts.
+3. Test until comfortable with the artifacts.
+4. Create and push a new version tag:
+
+```sh
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+```
+
+GitHub retains both `v1.1.0` and `v1.2.0`, allowing rollback. Uploading a newer
+ZIP to DHIS2 updates the installed app because its application identity remains
+the same; it does not create a separately named app. Upload an older release ZIP
+to roll back. Never reuse or move an existing release tag.

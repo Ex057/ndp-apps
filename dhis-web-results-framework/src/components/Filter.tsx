@@ -16,6 +16,10 @@ export default function Filter({
         label: string;
         displayIfEmpty?: boolean;
         defaultValue?: string;
+        loading?: boolean;
+        disabled?: boolean;
+        error?: boolean;
+        emptyText?: string;
     }>;
     data: {
         ou?: string | string[];
@@ -102,6 +106,14 @@ export default function Filter({
                                     style={{ width: "100%" }}
                                     allowClear
                                     value={data[option.key]}
+                                    loading={option.loading}
+                                    disabled={option.disabled}
+                                    status={option.error ? "error" : undefined}
+                                    notFoundContent={
+                                        option.loading
+                                            ? "Loading..."
+                                            : option.emptyText
+                                    }
                                     placeholder={`Select ${option.label}`}
                                     filterOption={(input, option) =>
                                         String(option?.label ?? "")

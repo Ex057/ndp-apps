@@ -3,6 +3,7 @@ import React, { useCallback, useMemo } from "react";
 import { Results } from "../../../../components/results";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { ResultsProps } from "../../../../types";
+import { derivePeriods } from "../../../../utils";
 import { SubProgramOutcomeRoute } from "./route";
 import { RootRoute } from "../../../__root";
 
@@ -10,11 +11,10 @@ export const SubProgramOutcomeIndexRoute = createRoute({
     path: "/",
     getParentRoute: () => SubProgramOutcomeRoute,
     component: Component,
-    errorComponent: () => <div>{null}</div>,
 });
 
 function Component() {
-	const { allOptionsMap } = RootRoute.useLoaderData();
+    const { allOptionsMap } = RootRoute.useLoaderData();
     const { engine } = SubProgramOutcomeIndexRoute.useRouteContext();
     const search = SubProgramOutcomeIndexRoute.useSearch();
     const navigate = SubProgramOutcomeIndexRoute.useNavigate();
@@ -22,6 +22,7 @@ function Component() {
         engine,
         search: {
             ...search,
+            pe: derivePeriods(search.pe),
         },
         ndpVersion: search.v,
         attributeValue: "intermediateOutcome",
@@ -52,7 +53,7 @@ function Component() {
                 },
             ],
         }),
-        [data, onChange, search],
+        [allOptionsMap, data, dimensions, items, onChange, search],
     );
 
     return <Results {...resultsProps} />;

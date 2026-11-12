@@ -23,6 +23,10 @@ import downloadExcelFromColumns from "../download-antd-table";
 import downloadPdfFromColumns from "../download-pdf-from-columns";
 import { RootRoute } from "../routes/__root";
 import {
+    orderReportingQuarters,
+    ReportingQuarter,
+} from "../utils/quarter-order";
+import {
     AnalyticsData,
     budgetColumns,
     PERFORMANCE_LABELS,
@@ -155,7 +159,7 @@ const makeIndicatorData = (
     ];
 };
 
-type QuarterKey = "Q1" | "Q2" | "Q3" | "Q4";
+type QuarterKey = ReportingQuarter;
 
 const quarterOrder: Record<QuarterKey, QuarterKey> = {
     Q1: "Q3",
@@ -825,7 +829,11 @@ export function Results(props: ResultsProps) {
                                         ]}
                                         value={currentQuarters}
                                         onChange={(val) =>
-                                            setCurrentQuarters(val as QuarterKey[])
+                                            setCurrentQuarters(
+                                                orderReportingQuarters(
+                                                    val as QuarterKey[],
+                                                ),
+                                            )
                                         }
                                         mode="multiple"
                                     />

@@ -1,13 +1,14 @@
 import { createRoute, Outlet } from "@tanstack/react-router";
 import React, { useEffect } from "react";
 
-import { Flex } from "antd";
+import { Alert, Flex } from "antd";
 import Filter from "../../../../components/Filter";
-import { GoalValidator, Option } from "../../../../types";
+import { GoalValidator } from "../../../../types";
 import { RootRoute } from "../../../__root";
 import { NDPRoute } from "../route";
-import { queryDataElements } from "../../../../query-options";
+import { programmeFilterDataElementsQueryOptions } from "../../../../query-options";
 import { uniqBy } from "lodash";
+import { useQuery } from "@tanstack/react-query";
 
 export const OutcomeLevelRoute = createRoute({
     getParentRoute: () => NDPRoute,
@@ -25,24 +26,15 @@ function Component() {
         (pg) =>
             search.program !== undefined && pg.code.includes(search.program),
     );
-    const [objectives, setObjectives] = React.useState<any[]>([]);
-
-    useEffect(() => {
-        let isMounted = true;
-        async function loadObjectives() {
-            const result = await queryDataElements({
-                ...search,
-                attributeValue: "outcome",
-                ndpVersion: search.v,
-            });
-
-            if (isMounted) setObjectives(result);
-        }
-        loadObjectives();
-        return () => {
-            isMounted = false;
-        };
-    }, [search.program]);
+    const objectivesQuery = useQuery(
+        programmeFilterDataElementsQueryOptions({
+            ndpVersion: search.v,
+            attributeValue: "outcome",
+            program: search.program,
+            ou: search.ou,
+        }),
+    );
+    const objectives = objectivesQuery.data ?? [];
 
     useEffect(() => {
         if (search.categoryOptions === undefined) {
@@ -53,7 +45,7 @@ function Component() {
                 }),
             });
         }
-    }, []);
+    }, [categories, navigate, search.category, search.categoryOptions]);
 
     return (
         <Flex vertical gap={10} style={{ padding: 10, height: "100%" }}>
@@ -92,18 +84,41 @@ function Component() {
                     {
                         key: "objective",
                         options: uniqBy(
-                            objectives.map(({ GuoVDNEBAXA }) => ({
-                                value: GuoVDNEBAXA,
-                                label:
-                                    allOptionsMap.get(GuoVDNEBAXA) ||
-                                    GuoVDNEBAXA,
-                            })),
+                            objectives.flatMap((dataElement) => {
+                                const objective = dataElement[
+                                    "GuoVDNEBAXA"
+                                ] as string | undefined;
+                                if (!objective) return [];
+                                return {
+                                    value: objective,
+                                    label:
+                                        allOptionsMap.get(objective) ||
+                                        objective,
+                                };
+                            }),
                             "value",
                         ),
                         label: "Program Objective",
+                        loading: objectivesQuery.isFetching,
+                        disabled: !search.program || objectivesQuery.isFetching,
+                        error: objectivesQuery.isError,
+                        emptyText: search.program
+                            ? "No programme objectives found"
+                            : "Select an NDP Programme first",
                     },
                 ]}
             />
+
+            {objectivesQuery.isError && (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Programme objectives could not be loaded"
+                    action={
+                        <a onClick={() => objectivesQuery.refetch()}>Retry</a>
+                    }
+                />
+            )}
 
             {search.program && (
                 <div

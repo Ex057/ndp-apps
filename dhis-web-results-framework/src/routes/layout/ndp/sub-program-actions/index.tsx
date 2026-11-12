@@ -1,5 +1,5 @@
 import { createRoute } from "@tanstack/react-router";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { Results } from "../../../../components/results";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { ResultsProps } from "../../../../types";
@@ -11,7 +11,6 @@ export const SubProgramActionIndexRoute = createRoute({
     path: "/",
     getParentRoute: () => SubProgramActionRoute,
     component: Component,
-    errorComponent: () => <div>{null}</div>,
 });
 
 function Component() {
@@ -28,14 +27,17 @@ function Component() {
         ndpVersion: search.v,
         attributeValue: "action",
     });
-    const onChange = (key: string) => {
-        navigate({
-            search: (prev) => ({
-                ...prev,
-                tab: key,
-            }),
-        });
-    };
+    const onChange = useCallback(
+        (key: string) => {
+            navigate({
+                search: (prev) => ({
+                    ...prev,
+                    tab: key,
+                }),
+            });
+        },
+        [navigate],
+    );
     const resultsProps = useMemo<ResultsProps>(
         () => ({
             data,
@@ -52,7 +54,7 @@ function Component() {
                 },
             ],
         }),
-        [data, onChange, search],
+        [allOptionsMap, data, dimensions, items, onChange, search],
     );
 
     return <Results {...resultsProps} />;

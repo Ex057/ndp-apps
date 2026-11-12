@@ -1,52 +1,43 @@
 import { createRoute, Outlet } from "@tanstack/react-router";
 import React, { useEffect } from "react";
 
-import { Flex } from "antd";
+import { Alert, Flex } from "antd";
 import Filter from "../../../../components/Filter";
 import { GoalValidator } from "../../../../types";
 import { RootRoute } from "../../../__root";
 import { NDPRoute } from "../route";
-import { queryDataElements } from "../../../../query-options";
+import { programmeFilterDataElementsQueryOptions } from "../../../../query-options";
 import { uniqBy } from "lodash";
+import { useQuery } from "@tanstack/react-query";
 
 export const SubProgramOutcomeRoute = createRoute({
     getParentRoute: () => NDPRoute,
     path: "sub-program-outcomes",
     component: Component,
     validateSearch: GoalValidator,
-    errorComponent: () => <div>{null}</div>,
 });
 
 function Component() {
     const search = SubProgramOutcomeRoute.useSearch();
-    const options = NDPRoute.useLoaderData();
     const { categories } = RootRoute.useLoaderData();
 
     const navigate = SubProgramOutcomeRoute.useNavigate();
     const { programGoals, programs, allOptionsMap } = RootRoute.useLoaderData();
-    const [objectives, setObjectives] = React.useState<any[]>([]);
     const { objective, ou, pe, program, category, categoryOptions, v } = search;
 
     const programGoal = programGoals.find(
         (pg) => program !== undefined && pg.code.includes(program),
     );
 
-    useEffect(() => {
-        let isMounted = true;
-        async function loadObjectives() {
-            const result = await queryDataElements({
-                ...search,
-                attributeValue: "intermediateOutcome",
-                ndpVersion: v,
-            });
-
-            if (isMounted) setObjectives(result);
-        }
-        loadObjectives();
-        return () => {
-            isMounted = false;
-        };
-    }, [search.program]);
+    const objectivesQuery = useQuery(
+        programmeFilterDataElementsQueryOptions({
+            ndpVersion: v,
+            attributeValue: "intermediateOutcome",
+            program,
+            ou,
+        }),
+    );
+    const objectives = objectivesQuery.data ?? [];
 
     useEffect(() => {
         if (categoryOptions === undefined) {
@@ -57,7 +48,7 @@ function Component() {
                 }),
             });
         }
-    }, []);
+    }, [categories, category, categoryOptions, navigate]);
     return (
         <Flex vertical gap={10} style={{ padding: 10, height: "100%" }}>
             <Filter
@@ -92,18 +83,40 @@ function Component() {
                     {
                         key: "objective",
                         options: uniqBy(
-                            objectives.map(({ GuoVDNEBAXA }) => ({
-                                value: GuoVDNEBAXA,
-                                label:
-                                    allOptionsMap.get(GuoVDNEBAXA) ||
-                                    GuoVDNEBAXA,
-                            })),
+                            objectives.flatMap((dataElement) => {
+                                const objective = dataElement[
+                                    "GuoVDNEBAXA"
+                                ] as string | undefined;
+                                if (!objective) return [];
+                                return {
+                                    value: objective,
+                                    label:
+                                        allOptionsMap.get(objective) ||
+                                        objective,
+                                };
+                            }),
                             "value",
                         ),
                         label: "Program Objective",
+                        loading: objectivesQuery.isFetching,
+                        disabled: !program || objectivesQuery.isFetching,
+                        error: objectivesQuery.isError,
+                        emptyText: program
+                            ? "No programme objectives found"
+                            : "Select an NDP Programme first",
                     },
                 ]}
             />
+            {objectivesQuery.isError && (
+                <Alert
+                    type="error"
+                    showIcon
+                    message="Programme objectives could not be loaded"
+                    action={
+                        <a onClick={() => objectivesQuery.refetch()}>Retry</a>
+                    }
+                />
+            )}
             {program && (
                 <div
                     style={{

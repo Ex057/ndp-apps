@@ -11,7 +11,6 @@ export const OutcomeLevelIndexRoute = createRoute({
     path: "/",
     getParentRoute: () => OutcomeLevelRoute,
     component: Component,
-    errorComponent: () => <div>{null}</div>,
 });
 function Component() {
     const { engine } = OutcomeLevelIndexRoute.useRouteContext();
@@ -53,7 +52,7 @@ function Component() {
                 },
             ],
         }),
-        [data, onChange, search],
+        [allOptionsMap, data, dimensions, items, onChange, search],
     );
 
     return <Results {...resultsProps} />;
