@@ -12,6 +12,15 @@ function moveNumbersToEnd(str: string): string {
     return `${text} ${numbers.join(" ")}`.trim();
 }
 
+export function getPeriodDisplayName(periodId: string): string {
+    const { name } = createFixedPeriodFromPeriodId({
+        periodId,
+        calendar: "iso8601",
+    });
+
+    return moveNumbersToEnd(name);
+}
+
 export default function PeriodPicker({
     period,
     onChange,
@@ -37,17 +46,10 @@ export default function PeriodPicker({
             first.activeFinancialYears.length > 0
         ) {
             return first.activeFinancialYears
-                .map((p) => {
-                    return createFixedPeriodFromPeriodId({
-                        periodId: p,
-                        calendar: "iso8601",
-                    });
-                })
-                .map(({ name, id }) => {
-                    console.log(name, id);
+                .map((periodId) => {
                     return {
-                        label: moveNumbersToEnd(name),
-                        value: id,
+                        label: getPeriodDisplayName(periodId),
+                        value: periodId,
                     };
                 });
         } else if (
@@ -56,16 +58,10 @@ export default function PeriodPicker({
             first.activeQuarters.length > 0
         ) {
             return first.activeQuarters
-                .map((p) => {
-                    return createFixedPeriodFromPeriodId({
-                        periodId: p,
-                        calendar: "iso8601",
-                    });
-                })
-                .map(({ name, id }) => {
+                .map((periodId) => {
                     return {
-                        label: moveNumbersToEnd(name),
-                        value: id,
+                        label: getPeriodDisplayName(periodId),
+                        value: periodId,
                     };
                 });
         }

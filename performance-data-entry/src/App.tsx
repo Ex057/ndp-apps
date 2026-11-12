@@ -1,10 +1,10 @@
-import { useDataEngine } from "@dhis2/app-runtime";
+import { useConfig, useDataEngine } from "@dhis2/app-runtime";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { ConfigProvider } from "antd";
 import React, { FC } from "react";
 import { router } from "./router";
-
+import SessionManager from "./session/SessionManager";
 import "./app.css";
 
 const queryClient = new QueryClient();
@@ -16,6 +16,7 @@ declare module "@tanstack/react-router" {
 
 const MyApp: FC = () => {
     const engine = useDataEngine();
+    const { baseUrl } = useConfig();
 
     return (
         <ConfigProvider
@@ -43,7 +44,9 @@ const MyApp: FC = () => {
             }}
         >
             <QueryClientProvider client={queryClient}>
-                <RouterProvider router={router} context={{ engine }} />
+                <SessionManager baseUrl={baseUrl}>
+                    <RouterProvider router={router} context={{ engine }} />
+                </SessionManager>
             </QueryClientProvider>
         </ConfigProvider>
     );

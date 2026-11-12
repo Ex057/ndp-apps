@@ -94,6 +94,7 @@ export default function FileUpload({
         name: "file",
         multiple: true,
         beforeUpload: async (file) => {
+            if (disabled) return Upload.LIST_IGNORE;
             const formData = new FormData();
             formData.append("file", file as File);
             const res = await fetch(`${baseUrl}/api/fileResources`, {
@@ -178,6 +179,7 @@ export default function FileUpload({
     };
 
     const handleDelete = async (file: FileResource) => {
+        if (disabled) return;
         const prev = await db.dataValues.get([de, aoc, coc, ou, pe]);
         if (prev !== undefined) {
             await db.dataValues.put({
@@ -244,6 +246,7 @@ export default function FileUpload({
                                 key="delete"
                                 type="text"
                                 danger
+                                disabled={disabled}
                                 icon={<DeleteOutlined />}
                                 onClick={() => handleDelete(file)}
                             >

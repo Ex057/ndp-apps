@@ -5,7 +5,7 @@
     "license": "BSD-3-Clause",
     "private": true,
     "scripts": {
-        "build": "d2-app-scripts build",
+        "build": "d2-app-scripts build && node ../scripts/archive-build.mjs --app results",
         "start": "yarn start:train",
         "start:prod": "d2-app-scripts start --port 3000 --proxy https://ndpme.go.ug/ndpdb --proxyPort 8080",
         "start:train": "d2-app-scripts start --port 3000 --proxy https://train.ndpme.go.ug/ndpdb --proxyPort 8080",

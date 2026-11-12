@@ -22,6 +22,7 @@ export default function CommentCell({
     baselineYear,
     targetYear,
     disabled,
+    isCategoryOptionDisabled,
 }: {
     coc: string;
     aoc: string;
@@ -35,6 +36,7 @@ export default function CommentCell({
     baselineYear: string;
     targetYear: string;
     disabled: boolean;
+    isCategoryOptionDisabled?: (name: string, index: number) => boolean;
 }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const { engine } = IndexRoute.useRouteContext();
@@ -48,6 +50,40 @@ export default function CommentCell({
             attributeOptionCombo: aoc,
         });
     }, [de, aoc, coc, ou, pe]);
+
+    const printableExplanations = useLiveQuery(async () => {
+        const explanationLookups = dataSet.categoryCombo.categories
+            .flatMap((category) => category.categoryOptions)
+            .map(async (option) => {
+                const optionCombo =
+                    dataSet.categoryCombo.categoryOptionCombos.find((combo) =>
+                        combo.categoryOptions.some(
+                            (categoryOption) =>
+                                categoryOption.id === option.id,
+                        ),
+                    );
+                if (!optionCombo) return undefined;
+
+                const dataValue = await db.dataValues.get([
+                    de,
+                    optionCombo.id,
+                    coc,
+                    ou,
+                    pe,
+                ]);
+                if (isEmpty(dataValue?.explanation)) return undefined;
+
+                return {
+                    id: option.id,
+                    dimension: option.name,
+                    explanation: dataValue?.explanation ?? "",
+                };
+            });
+
+        return (await Promise.all(explanationLookups)).filter(
+            (item): item is NonNullable<typeof item> => item !== undefined,
+        );
+    }, [dataSet.id, de, coc, ou, pe]);
 
     const handleOk = () => {
         setIsModalOpen(false);
@@ -78,7 +114,14 @@ export default function CommentCell({
                         co={co}
                         cc={cc}
                         cp={cp}
-                        disabled={index < 1 || disabled}
+                        disabled={
+                            disabled ||
+                            (isCategoryOptionDisabled?.(
+                                record.name,
+                                index,
+                            ) ??
+                                index < 1)
+                        }
                     />
                 );
             },
@@ -107,7 +150,14 @@ export default function CommentCell({
                         cc={cc}
                         cp={cp}
                         co={co}
-                        disabled={index < 1 || disabled}
+                        disabled={
+                            disabled ||
+                            (isCategoryOptionDisabled?.(
+                                record.name,
+                                index,
+                            ) ??
+                                index < 1)
+                        }
                     />
                 );
             },
@@ -132,7 +182,14 @@ export default function CommentCell({
                         co={co}
                         cc={cc}
                         cp={cp}
-                        disabled={index < 1 || disabled}
+                        disabled={
+                            disabled ||
+                            (isCategoryOptionDisabled?.(
+                                record.name,
+                                index,
+                            ) ??
+                                index < 1)
+                        }
                     />
                 );
             },
@@ -141,6 +198,7 @@ export default function CommentCell({
     return (
         <Flex vertical>
             <Space.Compact
+                className="print-hidden"
                 style={{
                     width: "100%",
                 }}
@@ -166,6 +224,19 @@ export default function CommentCell({
                     }}
                 />
             </Space.Compact>
+
+            <div className="print-only results-print-explanations">
+                {printableExplanations?.length ? (
+                    printableExplanations.map((item) => (
+                        <div key={item.id}>
+                            <strong>{item.dimension}:</strong>{" "}
+                            <span>{item.explanation}</span>
+                        </div>
+                    ))
+                ) : (
+                    <span>—</span>
+                )}
+            </div>
 
             <Modal
                 title="Explanations and Attachments"

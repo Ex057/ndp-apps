@@ -16,6 +16,33 @@ export const search = z.object({
 });
 
 export type Search = z.infer<typeof search>;
+
+export type DataEntrySection = "results" | "actions";
+export type DataEntryLockColumn =
+    | "baseline"
+    | "target"
+    | "budgetPlanned"
+    | "budgetApproved";
+export type DataEntryLockMode = "open" | "locked" | "scheduled";
+
+export interface DataEntryLockRule {
+    id: string;
+    reportingPeriod: string;
+    organisationUnitIds: string[];
+    dataSetIds: string[];
+    section: DataEntrySection;
+    columns: DataEntryLockColumn[];
+    mode: DataEntryLockMode;
+    lockAt?: string;
+    enabled: boolean;
+    updatedAt: string;
+}
+
+export interface DataEntryLocks {
+    version: number;
+    rules: DataEntryLockRule[];
+}
+
 export interface OrgUnit extends TreeDataNode {
     pId?: string;
     value: string;

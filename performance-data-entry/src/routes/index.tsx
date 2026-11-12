@@ -16,7 +16,9 @@ import {
 import { orderBy } from "lodash";
 import React, { useEffect, useMemo, useState } from "react";
 import DataEntryTable from "../components/DataEntryTable";
-import PeriodPicker from "../components/period-picker";
+import PeriodPicker, {
+    getPeriodDisplayName,
+} from "../components/period-picker";
 import { IDataSet, Option, PeriodType, search } from "../types";
 import { getPathToNode } from "../utils";
 import { RootRoute } from "./__root";
@@ -41,6 +43,8 @@ const getPeriodType = (
 
 function IndexRouteComponent() {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+    const [splitterSizes, setSplitterSizes] = useState<number[]>([20]);
 
     const {
         organisationTree,
@@ -93,6 +97,39 @@ function IndexRouteComponent() {
         collectAllNodes(organisationTree);
         return allNodes;
     }, [organisationTree]);
+
+    const selectedVoteName = searchOptions.find(
+        (option) => option.value === orgUnit,
+    )?.label;
+    const selectedDataSet = dataSetsForSelectedOrgUnit.find(
+        (option) => option.id === dataSet,
+    );
+    const selectedPeriodName = pe ? getPeriodDisplayName(pe) : undefined;
+    const canPrint = Boolean(selectedVoteName && selectedDataSet && pe);
+
+    const openPrintPreview = () => setIsPrintPreviewOpen(true);
+
+    const printHeader = (
+        <header className="results-print-header">
+            <Typography.Title level={3}>
+                NDP Results and Budgets Entry
+            </Typography.Title>
+            <dl className="results-print-metadata">
+                <div>
+                    <dt>NDP Votes</dt>
+                    <dd>{selectedVoteName ?? "—"}</dd>
+                </div>
+                <div>
+                    <dt>Programme Dataset</dt>
+                    <dd>{selectedDataSet?.name ?? "—"}</dd>
+                </div>
+                <div>
+                    <dt>Period</dt>
+                    <dd>{selectedPeriodName ?? "—"}</dd>
+                </div>
+            </dl>
+        </header>
+    );
 
     const showModal = () => {
         if (dataSet) {
@@ -215,14 +252,32 @@ function IndexRouteComponent() {
             style={{
                 height: "calc(100vh - 48px)",
             }}
+            onResize={(sizes) => setSplitterSizes(sizes)}
         >
             <Splitter.Panel
                 defaultSize="20%"
                 min="20%"
                 max="20%"
-                style={{ backgroundColor: "#F3F3F3", padding: 10 }}
+                resizable={false}
+                collapsible={{
+                    end: true,
+                    showCollapsibleIcon: true,
+                }}
+                style={{
+                    backgroundColor:
+                        splitterSizes[0] === 0 ? "transparent" : "#F3F3F3",
+                    padding: splitterSizes[0] === 0 ? 0 : 10,
+                    overflow: "hidden",
+                }}
             >
-                <Flex vertical gap={12}>
+                <Flex
+                    vertical
+                    gap={12}
+                    style={{
+                        visibility:
+                            splitterSizes[0] === 0 ? "hidden" : "visible",
+                    }}
+                >
                     <Select
                         showSearch
                         allowClear
@@ -286,7 +341,7 @@ function IndexRouteComponent() {
                     level={4}
                     style={{ margin: 0, color: "#585D61" }}
                 >
-                    NDP Results and Budgets Entry
+                    Results and Budgets Entry
                 </Typography.Title>
                 <Flex gap={10}>
                     <Flex
@@ -301,7 +356,7 @@ function IndexRouteComponent() {
                         }}
                     >
                         <Form.Item
-                            label="NDP Votes"
+                            label="Votes"
                             layout="horizontal"
                             labelCol={{ span: 6 }}
                             wrapperCol={{ span: 18 }}
@@ -434,6 +489,8 @@ function IndexRouteComponent() {
                                     color: "white",
                                     width: "160px",
                                 }}
+                                disabled={!canPrint}
+                                onClick={openPrintPreview}
                             >
                                 Print Results Form
                             </Button>
@@ -441,7 +498,40 @@ function IndexRouteComponent() {
                     </Flex>
                 </Flex>
 
-                <DataEntryTable />
+                <section className="results-print-area">
+                    {printHeader}
+                    <DataEntryTable />
+                </section>
+
+                <Modal
+                    title="Print Results Form"
+                    open={isPrintPreviewOpen}
+                    onCancel={() => setIsPrintPreviewOpen(false)}
+                    width="95vw"
+                    rootClassName="results-print-preview-modal"
+                    footer={[
+                        <Button
+                            key="cancel"
+                            onClick={() => setIsPrintPreviewOpen(false)}
+                        >
+                            Cancel
+                        </Button>,
+                        <Button
+                            key="print"
+                            type="primary"
+                            onClick={() => window.print()}
+                        >
+                            Print
+                        </Button>,
+                    ]}
+                >
+                    <div className="results-print-preview">
+                        <section className="results-print-area">
+                            {printHeader}
+                            <DataEntryTable printMode />
+                        </section>
+                    </div>
+                </Modal>
             </Splitter.Panel>
         </Splitter>
     );

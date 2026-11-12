@@ -46,6 +46,7 @@ export default function TableCell({
     );
     const [isLoading, setIsLoading] = useState(false);
     const handleUpdate = async (value: string | number | null) => {
+        if (disabled) return;
         setIsLoading(true);
         const originalValue = await db.dataValues.get([de, aoc, coc, ou, pe]);
         if (originalValue) {

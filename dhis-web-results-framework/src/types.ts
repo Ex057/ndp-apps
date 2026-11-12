@@ -48,7 +48,7 @@ export const PerformanceSchema = z.object({
 export const VoteSchema = z.object({
     pe: firstStringFromQuery,
     quarters: z.boolean().optional(),
-    ou: z.string(),
+    ou: z.string().catch(""),
     category: z.string(),
     categoryOptions: z.string().array().optional(),
     isSum: z.boolean().optional(),
@@ -56,7 +56,7 @@ export const VoteSchema = z.object({
 
 export const FlashReportSchema = z.object({
     pe: firstStringFromQuery,
-    ou: z.string(),
+    ou: z.string().catch(""),
 });
 
 export const ProgramReportSchema = z.object({

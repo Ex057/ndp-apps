@@ -6,6 +6,7 @@ import Performance from "../../../../components/performance";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { AnalyticsData } from "../../../../types";
 import { processByPerformance } from "../../../../utils";
+import { isDataElementAssignedToMatchingProgrammeDataSet } from "../../../../utils/data-element-assignments";
 import { RootRoute } from "../../../__root";
 import { VoteOutputPerformanceRoute } from "./route";
 export const VoteOutputPerformanceIndexRoute = createRoute({
@@ -25,11 +26,25 @@ function Component() {
             ...search,
             pe: [search.pe ?? ""],
         },
-        ndpVersion: search.v,
+        ndpVersion: search.v ?? "",
         attributeValue: "output",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [search.ou],
     });
     const [modal, contextHolder] = Modal.useModal();
+    const selectedVoteData = React.useMemo(
+        () =>
+            data.filter((row) =>
+                isDataElementAssignedToMatchingProgrammeDataSet(
+                    row as unknown as Record<string, unknown>,
+                    search.ou,
+                    search.v ?? "",
+                ),
+            ),
+        [data, search.ou, search.v],
+    );
     const handleChange: TableProps<
         ReturnType<typeof processByPerformance>[number]
     >["onChange"] = (_pagination, _filters, sorter) => {
@@ -122,7 +137,8 @@ function Component() {
 
     return (
         <Performance
-            data={data}
+            key={`${search.ou}-${search.pe}`}
+            data={selectedVoteData}
             groupingBy="AKzxCNn1zkQ"
             initialColumns={columns}
             pe={search.pe ?? ""}

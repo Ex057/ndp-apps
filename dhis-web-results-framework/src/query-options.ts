@@ -33,6 +33,15 @@ import {
     formatPercentage,
     processDataElements,
 } from "./utils";
+import {
+    getDataElementProgrammeCode,
+    getDataValueContextKey,
+    getProgrammeVoteIds,
+    getReportingProgrammeCodesForOrgUnit,
+    isDataElementAssignedToOrgUnit,
+    isDataElementAssignedToMatchingProgrammeDataSet,
+    isDataElementInProgramme,
+} from "./utils/data-element-assignments";
 
 export const attachmentsQueryOptions = (
     baseUrl: string,
@@ -95,6 +104,7 @@ export const queryDataElements = async ({
     ou,
     requiresProgram,
     queryByOu,
+    restrictToReportingRateProgrammes,
     isVision,
 }: {
     ndpVersion: string;
@@ -106,6 +116,7 @@ export const queryDataElements = async ({
     ou: string;
     requiresProgram?: boolean;
     queryByOu?: boolean;
+    restrictToReportingRateProgrammes?: boolean;
     isVision?: boolean;
 }) => {
     let where: Record<string, string | string[]> = {
@@ -116,16 +127,9 @@ export const queryDataElements = async ({
         where.BmUMiIbD5XY = attributeValue;
     }
 
-    if (queryByOu && ou) {
-        where.orgUnit = ou;
-    }
     const requiredAttributes: string[] = [];
 
-    console.log(program, requiresProgram);
-
-    if (requiresProgram && program && program !== "All") {
-        requiredAttributes.push(program);
-    } else if (requiresProgram) {
+    if (requiresProgram && (!program || program === "All")) {
         return [];
     }
 
@@ -145,15 +149,28 @@ export const queryDataElements = async ({
         requiredAttributes.push("true");
     }
 
-    const dataElements = await db.dataElements
+    const cachedDataElements = await db.dataElements
         .where(where)
         .filter((de) => {
+            if (
+                requiresProgram &&
+                program &&
+                !isDataElementInProgramme(
+                    de as unknown as Record<string, unknown>,
+                    program,
+                )
+            ) {
+                return false;
+            }
             if (requiredAttributes.length) {
                 if (!Array.isArray(de.attributes)) return false;
                 const hasAllAttributes = requiredAttributes.every((attr) =>
                     de.attributes.includes(attr),
                 );
                 if (!hasAllAttributes) return false;
+            }
+            if (queryByOu && ou) {
+                return isDataElementAssignedToOrgUnit(de, ou);
             }
             if (ou && Array.isArray(de.organisationUnits)) {
                 return de.organisationUnits.some(
@@ -164,7 +181,34 @@ export const queryDataElements = async ({
         })
         .toArray();
 
-    return dataElements;
+    const dataElements = uniqBy(cachedDataElements, "id");
+    if (!restrictToReportingRateProgrammes || !ou) return dataElements;
+
+    // Derive the programme represented by each dataset from its complete
+    // indicator membership. Using only the report's indicator type (for
+    // example, intermediate outcomes) can make a stray/mistagged indicator
+    // become the dataset's apparent programme and makes the visible rows vary
+    // according to which periods happen to contain analytics values.
+    const allNdpDataElements = await db.dataElements
+        .where("fsIKncW1Eps")
+        .equals(ndpVersion)
+        .toArray();
+    const eligibleProgrammeCodes = getReportingProgrammeCodesForOrgUnit(
+        allNdpDataElements as unknown as Array<Record<string, unknown>>,
+        ou,
+        ndpVersion,
+    );
+    return dataElements.filter((dataElement) => {
+        const record = dataElement as unknown as Record<string, unknown>;
+        return (
+            eligibleProgrammeCodes.has(getDataElementProgrammeCode(record)) &&
+            isDataElementAssignedToMatchingProgrammeDataSet(
+                record,
+                ou,
+                ndpVersion,
+            )
+        );
+    });
 };
 
 export const queryAnalytics = async ({
@@ -181,10 +225,13 @@ export const queryAnalytics = async ({
     program,
     objective,
     queryByOu,
+    restrictToReportingRateProgrammes,
     specificLevel,
     isVision,
     goal,
     keyResultArea,
+    enforceDataSetOrgUnitAssignments,
+    organisationUnitIds,
 }: {
     pe: string | string[];
     quarters?: boolean;
@@ -200,10 +247,13 @@ export const queryAnalytics = async ({
     program?: string;
     objective?: string;
     queryByOu?: boolean;
+    restrictToReportingRateProgrammes?: boolean;
     specificLevel?: number;
     isVision?: boolean;
     goal?: string;
     keyResultArea?: string;
+    enforceDataSetOrgUnitAssignments?: boolean;
+    organisationUnitIds?: string[];
 }): Promise<{
     data: AnalyticsData[];
     items: Analytics["metaData"]["items"];
@@ -226,11 +276,16 @@ export const queryAnalytics = async ({
         ou,
         requiresProgram,
         queryByOu,
+        restrictToReportingRateProgrammes,
         isVision,
         goal,
         keyResultArea,
     });
     const dataElementsMap = new Map(dataElements.map((de) => [de.id, de]));
+
+    if (organisationUnitIds && organisationUnitIds.length === 0) {
+        return { data, items, dimensions };
+    }
 
     if (!isEmpty(pe) && dataElements.length > 0) {
         const periodFilter = new Set(pe);
@@ -251,8 +306,10 @@ export const queryAnalytics = async ({
             includeMetadataDetails: "true",
         });
 
-        let orgUnitParam = `ou:${ou}`;
-        if (specificLevel !== undefined) {
+        let orgUnitParam = organisationUnitIds
+            ? `ou:${organisationUnitIds.join(";")}`
+            : `ou:${ou}`;
+        if (!organisationUnitIds && specificLevel !== undefined) {
             orgUnitParam = `${orgUnitParam};LEVEL-${specificLevel}`;
         }
 
@@ -312,13 +369,15 @@ export const queryAnalytics = async ({
                             const { explanation } = JSON.parse(dv.comment) as {
                                 explanation?: string;
                             };
-                            allAttachments[
-                                `${dv.dataElement}-${dv.period}-attachment`
-                            ] = dv.comment;
-                            allComments[
-                                `${dv.dataElement}-${dv.period}-comment`
-                            ] =
-                                `${allComments[`${dv.dataElement}-${dv.period}-comment`] ?? ""}\r${explanation ?? ""}`;
+                            const contextKey = getDataValueContextKey({
+                                dataElement: dv.dataElement,
+                                orgUnit: dv.orgUnit,
+                                period: dv.period,
+                            });
+                            allAttachments[`${contextKey}-attachment`] =
+                                dv.comment;
+                            allComments[`${contextKey}-comment`] =
+                                `${allComments[`${contextKey}-comment`] ?? ""}\r${explanation ?? ""}`;
                         }
                     } catch (error) {}
                 }
@@ -333,10 +392,20 @@ export const queryAnalytics = async ({
             ].flatMap((dx) => {
                 const de = dataElementsMap.get(dx)!;
                 const dxFiltered = actualData.filter((item) => item.dx === dx);
-                return Object.entries(groupBy(dxFiltered, "ou")).map(
-                    ([orgUnit, orgUnitFiltered]) => {
+                return Object.entries(groupBy(dxFiltered, "ou"))
+                    .filter(
+                        ([orgUnit]) =>
+                            !enforceDataSetOrgUnitAssignments ||
+                            isDataElementAssignedToOrgUnit(de, orgUnit),
+                    )
+                    .map(([orgUnit, orgUnitFiltered]) => {
                         const current: Map<string, any> = new Map();
                         for (const pe of analytics.metaData.dimensions["pe"]) {
+                            const dataValueContextKey = getDataValueContextKey({
+                                dataElement: dx,
+                                orgUnit,
+                                period: pe,
+                            });
                             const periodData = orgUnitFiltered.filter(
                                 (row) => row.pe === pe,
                             );
@@ -430,19 +499,22 @@ export const queryAnalytics = async ({
                             );
                             current.set(
                                 `${pe}comment`,
-                                allComments[`${dx}-${pe}-comment`] ?? "",
+                                allComments[
+                                    `${dataValueContextKey}-comment`
+                                ] ?? "",
                             );
                             current.set(
                                 `${pe}attachment`,
-                                allAttachments[`${dx}-${pe}-attachment`] ?? [],
+                                allAttachments[
+                                    `${dataValueContextKey}-attachment`
+                                ] ?? [],
                             );
                         }
                         return {
                             ...de,
                             ...Object.fromEntries(current),
                         };
-                    },
-                );
+                    });
             });
             data = data.concat(processedDataElements);
         }
@@ -1625,22 +1697,30 @@ export const analyticsQueryOptions = ({
     attributeValue,
     ndpVersion,
     queryByOu,
+    restrictToReportingRateProgrammes,
     specificLevel,
     ouIsFilter = true,
     isVision,
+    enforceDataSetOrgUnitAssignments,
+    organisationUnitIds,
 }: {
     engine: ReturnType<typeof useDataEngine>;
     search: GoalSearch;
     ndpVersion: string;
     attributeValue?: string;
     queryByOu?: boolean;
+    restrictToReportingRateProgrammes?: boolean;
     specificLevel?: number;
     ouIsFilter?: boolean;
     isVision?: boolean;
+    enforceDataSetOrgUnitAssignments?: boolean;
+    organisationUnitIds?: string[];
 }) => {
+    const voteDatasetFilterVersion = 2;
     return queryOptions({
         queryKey: [
             "analytics",
+            voteDatasetFilterVersion,
             ...(pe ?? []),
             ou,
             category,
@@ -1653,6 +1733,12 @@ export const analyticsQueryOptions = ({
             goal,
             keyResultArea,
             isVision,
+            queryByOu,
+            restrictToReportingRateProgrammes,
+            specificLevel,
+            ouIsFilter,
+            enforceDataSetOrgUnitAssignments,
+            ...(organisationUnitIds ?? []),
         ],
         queryFn: async () => {
             const data = await queryAnalytics({
@@ -1669,10 +1755,13 @@ export const analyticsQueryOptions = ({
                 ndpVersion,
                 attributeValue,
                 queryByOu,
+                restrictToReportingRateProgrammes,
                 specificLevel,
                 isVision,
                 goal,
                 keyResultArea,
+                enforceDataSetOrgUnitAssignments,
+                organisationUnitIds,
             });
             return data;
         },
@@ -1714,12 +1803,23 @@ export const dataStoreQueryOptions = (
     });
 };
 
+// Version 4 invalidates cached dataset assignments. Vote-level reports now
+// derive programme membership from the currently assigned, programme-named
+// datasets rather than treating the global programme option set as a
+// vote-to-programme relationship.
+const NDP_INDICATOR_CACHE_VERSION = 4;
+const NDP_INDICATOR_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
 export const ndpIndicatorsQueryOptions = (
     engine: ReturnType<typeof useDataEngine>,
     ndpVersion: string,
 ) => {
     return queryOptions({
-        queryKey: ["ndp-indicators", ndpVersion],
+        queryKey: [
+            "ndp-indicators",
+            ndpVersion,
+            NDP_INDICATOR_CACHE_VERSION,
+        ],
         queryFn: async () => {
             const requiresRefresh = async () => {
                 const sample = await db.dataElements
@@ -1727,7 +1827,16 @@ export const ndpIndicatorsQueryOptions = (
                     .equals(ndpVersion)
                     .first();
                 if (!sample) return true;
+                const cachedSample = sample as typeof sample & {
+                    indicatorCacheVersion?: number;
+                    indicatorCacheUpdatedAt?: number;
+                };
                 return !(
+                    cachedSample.indicatorCacheVersion ===
+                        NDP_INDICATOR_CACHE_VERSION &&
+                    typeof cachedSample.indicatorCacheUpdatedAt === "number" &&
+                    Date.now() - cachedSample.indicatorCacheUpdatedAt <
+                        NDP_INDICATOR_CACHE_MAX_AGE_MS &&
                     Array.isArray(sample.voteCodes) &&
                     Array.isArray(sample.reportingCycles) &&
                     typeof sample.valueType === "string" &&
@@ -1746,7 +1855,14 @@ export const ndpIndicatorsQueryOptions = (
                 })) as {
                     dataElements: { dataElements: DataElement[] };
                 };
-                const processed = processDataElements(dataElements);
+                const indicatorCacheUpdatedAt = Date.now();
+                const processed = processDataElements(dataElements).map(
+                    (dataElement) => ({
+                        ...dataElement,
+                        indicatorCacheVersion: NDP_INDICATOR_CACHE_VERSION,
+                        indicatorCacheUpdatedAt,
+                    }),
+                );
                 await db.dataElements
                     .where("fsIKncW1Eps")
                     .equals(ndpVersion)
@@ -1767,6 +1883,34 @@ export const ndpIndicatorsQueryOptions = (
             }
             return "Done";
         },
+    });
+};
+
+export const programmeVoteIdsQueryOptions = (
+    ndpVersion: string,
+    programmeCode: string | undefined,
+) => {
+    return queryOptions({
+        queryKey: [
+            "programme-vote-ids",
+            ndpVersion,
+            programmeCode,
+            NDP_INDICATOR_CACHE_VERSION,
+        ],
+        queryFn: async () => {
+            if (!programmeCode) {
+                return [];
+            }
+            const dataElements = await db.dataElements
+                .where("fsIKncW1Eps")
+                .equals(ndpVersion)
+                .toArray();
+            return getProgrammeVoteIds(
+                dataElements as unknown as Array<Record<string, unknown>>,
+                programmeCode,
+            );
+        },
+        staleTime: 5 * 60 * 1000,
     });
 };
 

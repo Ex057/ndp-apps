@@ -2,9 +2,9 @@ import { QueryClient } from "@tanstack/react-query";
 import {
     createHashHistory,
     createRouter,
-    ErrorComponent,
 } from "@tanstack/react-router";
 import React from "react";
+import ReportError from "./components/report-error";
 import Spinner from "./components/Spinner";
 import { RootRoute } from "./routes/__root";
 import { IndexRoute } from "./routes/index";
@@ -108,7 +108,7 @@ const routeTree = RootRoute.addChildren([
 export const router = createRouter({
     routeTree,
     defaultPendingComponent: () => <Spinner message="Loading..." />,
-    defaultErrorComponent: ({ error }) => <ErrorComponent error={error} />,
+    defaultErrorComponent: ({ error }) => <ReportError error={error} />,
     history: createHashHistory(),
     context: { queryClient: new QueryClient(), engine: undefined! },
     defaultPreload: "intent",

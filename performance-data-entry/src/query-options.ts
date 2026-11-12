@@ -6,6 +6,7 @@ import { db } from "./db";
 import {
     CompleteDataSetRegistrations,
     DataSetValues,
+    DataEntryLocks,
     DHIS2OrgUnit,
     FileResource,
     IDataElement,
@@ -31,7 +32,7 @@ export const initialQueryOptions = (
                 configuration: {
                     resource: "dataStore/ndp-configurations",
                     params: {
-                        fields: "baseline,financialYears,activeQuarters,activeFinancialYears",
+                        fields: "baseline,financialYears,activeQuarters,activeFinancialYears,dataEntryLocks",
                         paging: false,
                     },
                 },
@@ -62,6 +63,7 @@ export const initialQueryOptions = (
                     financialYears: string[];
                     activeQuarters: string[];
                     activeFinancialYears: string[];
+                    dataEntryLocks?: DataEntryLocks;
                 }>;
                 options: { optionSets: OptionSet[] };
                 central: {
@@ -124,6 +126,30 @@ export const initialQueryOptions = (
                 all,
             };
         },
+    });
+};
+
+export const dataEntryLocksQueryOptions = (
+    engine: ReturnType<typeof useDataEngine>,
+    ndpVersion: string | undefined,
+) => {
+    return queryOptions({
+        queryKey: ["data-entry-locks", ndpVersion],
+        queryFn: async () => {
+            const { configuration } = (await engine.query({
+                configuration: {
+                    resource: `dataStore/ndp-configurations/${ndpVersion}`,
+                    params: { fields: "dataEntryLocks" },
+                },
+            })) as unknown as {
+                configuration: { dataEntryLocks?: DataEntryLocks };
+            };
+            return configuration.dataEntryLocks;
+        },
+        enabled: !!ndpVersion,
+        refetchOnWindowFocus: true,
+        staleTime: 0,
+        retry: false,
     });
 };
 

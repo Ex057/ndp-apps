@@ -1,6 +1,7 @@
 import { DownloadOutlined } from "@ant-design/icons";
 import { createFixedPeriodFromPeriodId } from "@dhis2/multi-calendar-dates";
 import { createRoute } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import {
     Button,
     Descriptions,
@@ -13,6 +14,7 @@ import {
 import { groupBy, orderBy } from "lodash";
 import React, { useCallback, useMemo } from "react";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
+import { programmeVoteIdsQueryOptions } from "../../../../query-options";
 import { AnalyticsData, Dx, Option } from "../../../../types";
 import {
     calculatePerformanceRatio,
@@ -332,6 +334,14 @@ function Component() {
         () => new Map(votes.map((vote) => [vote.id, vote])),
         [votes],
     );
+    const { data: configuredProgrammeVoteIds } = useSuspenseQuery(
+        programmeVoteIdsQueryOptions(v ?? "", program),
+    );
+    const programmeVoteIds = useMemo(
+        () =>
+            configuredProgrammeVoteIds.filter((voteId) => voteMap.has(voteId)),
+        [configuredProgrammeVoteIds, voteMap],
+    );
     const quarterDetails = useMemo(() => getQuarterDetails(pe), [pe]);
     const programmeRootOrgUnitId = useMemo(
         () => deriveCommonRootOrgUnitId(votes) ?? defaultOrgUnit ?? "",
@@ -393,6 +403,8 @@ function Component() {
         attributeValue: "output",
         specificLevel: voteLevel,
         ouIsFilter: false,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: programmeVoteIds,
     });
 
     const {
@@ -406,6 +418,8 @@ function Component() {
         attributeValue: "outcome",
         specificLevel: voteLevel,
         ouIsFilter: false,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: programmeVoteIds,
     });
 
     const {
@@ -419,6 +433,8 @@ function Component() {
         attributeValue: "intermediateOutcome",
         specificLevel: voteLevel,
         ouIsFilter: false,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: programmeVoteIds,
     });
 
     const {
@@ -432,6 +448,8 @@ function Component() {
         attributeValue: "action",
         specificLevel: voteLevel,
         ouIsFilter: false,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: programmeVoteIds,
     });
 
     const outcomePerformanceByVote = useMemo(

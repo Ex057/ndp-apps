@@ -1,13 +1,14 @@
 import { useDataEngine } from "@dhis2/app-runtime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Flex, Modal, Table, TableProps, Typography } from "antd";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { dataValuesQueryOptions } from "../query-options";
-import { IDataElement, IDataSet, Search } from "../types";
+import { DataEntryLocks, IDataElement, IDataSet, Search } from "../types";
 import { generateGroupedColumns } from "./data-entry";
 import Spinner from "./Spinner";
 import { FaInfoCircle } from "react-icons/fa";
 import IndicatorDetails from "./indicator-details";
+import { getNextLockDeadline } from "../data-entry-locks";
 
 export default function CategoryCombo({
     dataSet,
@@ -18,6 +19,8 @@ export default function CategoryCombo({
     baselineYear,
     search,
     engine,
+    printMode = false,
+    dataEntryLocks,
 }: {
     dataSet: IDataSet;
     fields: IDataElement[];
@@ -27,6 +30,8 @@ export default function CategoryCombo({
     baselineYear: string;
     search: Search;
     engine: ReturnType<typeof useDataEngine>;
+    printMode?: boolean;
+    dataEntryLocks?: DataEntryLocks;
 }) {
     const [modal, contextHolder] = Modal.useModal();
     const queryClient = useQueryClient();
@@ -126,6 +131,23 @@ export default function CategoryCombo({
     const { data, isSuccess, isLoading } = useQuery(
         dataValuesQueryOptions(engine, search),
     );
+    const [lockRevision, setLockRevision] = useState(0);
+
+    useEffect(() => {
+        const deadline = getNextLockDeadline({
+            locks: dataEntryLocks,
+            dataSet,
+            reportingPeriod: pe,
+            organisationUnitId: ou,
+        });
+        if (!deadline) return;
+
+        const timeout = window.setTimeout(
+            () => setLockRevision((revision) => revision + 1),
+            Math.min(deadline - Date.now() + 50, 2_147_483_647),
+        );
+        return () => window.clearTimeout(timeout);
+    }, [dataEntryLocks, dataSet.id, dataSet.name, pe, ou, lockRevision]);
 
     const columns = useMemo(
         () =>
@@ -136,9 +158,24 @@ export default function CategoryCombo({
                 ou,
                 targetYear,
                 baselineYear,
-                disabled: !!(data?.completeDataSetRegistrations ?? []).length,
+                disabled:
+                    printMode ||
+                    !!(data?.completeDataSetRegistrations ?? []).length,
+                dataEntryLocks,
+                now: Date.now(),
             }),
-        [dataSet, fields, pe, ou, targetYear, baselineYear],
+        [
+            dataSet,
+            fields,
+            pe,
+            ou,
+            targetYear,
+            baselineYear,
+            printMode,
+            data?.completeDataSetRegistrations,
+            dataEntryLocks,
+            lockRevision,
+        ],
     );
 
     const nameColumn: TableProps<IDataElement>["columns"] = [
@@ -156,72 +193,90 @@ export default function CategoryCombo({
                     <div>
                         {record.name}
                         &nbsp;
-                        <FaInfoCircle
-                            style={{
-                                color: "#428BCA",
-                                fontSize: "22.4px",
-                                cursor: "pointer",
-                            }}
-                            onClick={() => {
-                                modal.info({
-                                    title: "Indicator Dictionary",
-                                    width: 700,
-                                    centered: true,
-                                    content: (
-                                        <IndicatorDetails indicator={record} />
-                                    ),
-                                });
-                            }}
-                        />
-                        {contextHolder}
+                        {!printMode && (
+                            <>
+                                <FaInfoCircle
+                                    style={{
+                                        color: "#428BCA",
+                                        fontSize: "22.4px",
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => {
+                                        modal.info({
+                                            title: "Indicator Dictionary",
+                                            width: 700,
+                                            centered: true,
+                                            content: (
+                                                <IndicatorDetails
+                                                    indicator={record}
+                                                />
+                                            ),
+                                        });
+                                    }}
+                                />
+                                {contextHolder}
+                            </>
+                        )}
                     </div>
                 );
             },
             key: "dataElement",
-            fixed: "left",
+            fixed: printMode ? undefined : "left",
         },
     ];
 
     if (isLoading) return <Spinner />;
     if (isSuccess)
         return (
-            <Flex vertical gap={8}>
+            <Flex vertical gap={8} className="results-form-section">
                 <Table
                     columns={[...nameColumn, ...(columns ?? [])]}
                     dataSource={fields}
                     pagination={false}
-                    scroll={{ y: "calc(100vh - 385px)" }}
+                    scroll={
+                        printMode ? undefined : { y: "calc(100vh - 385px)" }
+                    }
+                    tableLayout={printMode ? "fixed" : undefined}
                     bordered
                     size="small"
                     rowKey="id"
                 />
-                <Flex>
-                    <Button
-                        onClick={openDataSetCompleteModal}
-                        style={{
-                            backgroundColor:
-                                (data?.completeDataSetRegistrations ?? [])
+                {!printMode && (
+                    <>
+                        <Flex>
+                            <Button
+                                onClick={openDataSetCompleteModal}
+                                style={{
+                                    backgroundColor:
+                                        (
+                                            data?.completeDataSetRegistrations ??
+                                            []
+                                        ).length > 0
+                                            ? "#D9534F"
+                                            : "#5CB85C",
+                                    color: "white",
+                                }}
+                            >
+                                {(data?.completeDataSetRegistrations ?? [])
                                     .length > 0
-                                    ? "#D9534F"
-                                    : "#5CB85C",
-                            color: "white",
-                        }}
-                    >
-                        {data?.completeDataSetRegistrations ?? [].length > 0
-                            ? "Recall data and edit"
-                            : "Submit data and lock"}
-                    </Button>
-                </Flex>
+                                    ? "Recall data and edit"
+                                    : "Submit data and lock"}
+                            </Button>
+                        </Flex>
 
-                <Modal
-                    title={modalValues.title}
-                    closable={{ "aria-label": "Custom Close Button" }}
-                    open={isDataSetModalOpen}
-                    onOk={handleDataSetOk}
-                    onCancel={handleDataSetCancel}
-                >
-                    <Typography.Text>{modalValues.body}</Typography.Text>
-                </Modal>
+                        <Modal
+                            title={modalValues.title}
+                            closable={{ "aria-label": "Custom Close Button" }}
+                            open={isDataSetModalOpen}
+                            onOk={handleDataSetOk}
+                            onCancel={handleDataSetCancel}
+                        >
+                            <Typography.Text>
+                                {modalValues.body}
+                            </Typography.Text>
+                        </Modal>
+                    </>
+                )}
             </Flex>
         );
 }

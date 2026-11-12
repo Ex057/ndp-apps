@@ -5,6 +5,7 @@ import { FaInfoCircle } from "react-icons/fa";
 import Performance from "../../../../components/performance";
 import { useAnalyticsQuery } from "../../../../hooks/data-hooks";
 import { AnalyticsData } from "../../../../types";
+import { isDataElementAssignedToMatchingProgrammeDataSet } from "../../../../utils/data-element-assignments";
 import { VoteOutcomePerformanceRoute } from "./route";
 import { RootRoute } from "../../../__root";
 export const VoteOutcomePerformanceIndexRoute = createRoute({
@@ -24,11 +25,25 @@ function Component() {
             ...search,
             pe: [search.pe ?? ""],
         },
-        ndpVersion: search.v,
+        ndpVersion: search.v ?? "",
         attributeValue: "intermediateOutcome",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [search.ou],
     });
     const [modal, contextHolder] = Modal.useModal();
+    const selectedVoteData = React.useMemo(
+        () =>
+            data.filter((row) =>
+                isDataElementAssignedToMatchingProgrammeDataSet(
+                    row as unknown as Record<string, unknown>,
+                    search.ou,
+                    search.v ?? "",
+                ),
+            ),
+        [data, search.ou, search.v],
+    );
 
     const columns: TableProps<AnalyticsData>["columns"] = React.useMemo(() => {
         return [
@@ -104,7 +119,8 @@ function Component() {
 
     return (
         <Performance
-            data={data}
+            key={`${search.ou}-${search.pe}`}
+            data={selectedVoteData}
             groupingBy="YlPvYLC4VfO"
             initialColumns={columns}
             pe={search.pe ?? ""}

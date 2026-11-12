@@ -5,11 +5,13 @@ import {
     ICategory,
     ICategoryCombo,
     ICategoryOptionCombo,
+    DataEntryLocks,
     IDataElement,
     IDataSet,
 } from "../types";
 import TableCell from "./TableCell";
 import CommentCell from "./comment-cell";
+import { isDataEntryColumnLocked } from "../data-entry-locks";
 
 function replaceQNumber(str: string): string {
     const map: Record<string, string> = {
@@ -44,6 +46,8 @@ export function generateGroupedColumns({
     baselineYear,
     targetYear,
     disabled,
+    dataEntryLocks,
+    now = Date.now(),
 }: {
     dataSet: IDataSet;
     dataElements: IDataElement[];
@@ -52,6 +56,8 @@ export function generateGroupedColumns({
     targetYear: string;
     baselineYear: string;
     disabled: boolean;
+    dataEntryLocks?: DataEntryLocks;
+    now?: number;
 }): TableProps<IDataElement>["columns"] {
     const columns: TableProps<IDataElement>["columns"] = [];
     const categoryCombos = new Map<string, ICategoryCombo>();
@@ -71,6 +77,17 @@ export function generateGroupedColumns({
                     dataSet.categoryCombo.categoryOptionCombos.length === 3
                         ? 2
                         : 1;
+                const isColumnDisabled = (name: string, index: number) =>
+                    disabled ||
+                    isDataEntryColumnLocked({
+                        locks: dataEntryLocks,
+                        dataSet,
+                        categoryOptionName: name,
+                        reportingPeriod: pe,
+                        organisationUnitId: ou,
+                        fallbackLocked: index < indexToLock,
+                        now,
+                    });
                 dataSet.categoryCombo.categories
                     .flatMap((cat) => cat.categoryOptions)
                     .forEach((dataSetCOC, index, arr) => {
@@ -154,7 +171,10 @@ export function generateGroupedColumns({
                                     ou={ou}
                                     pe={period}
                                     de={record.id}
-                                    disabled={index < indexToLock || disabled}
+                                    disabled={isColumnDisabled(
+                                        dataSetCOC.name,
+                                        index,
+                                    )}
                                 />
                             ),
                         });
@@ -184,8 +204,9 @@ export function generateGroupedColumns({
                                         dataSet={dataSet}
                                         targetYear={targetYear}
                                         baselineYear={baselineYear}
-                                        disabled={
-                                            index < indexToLock || disabled
+                                        disabled={disabled}
+                                        isCategoryOptionDisabled={
+                                            isColumnDisabled
                                         }
                                     />
                                 ),

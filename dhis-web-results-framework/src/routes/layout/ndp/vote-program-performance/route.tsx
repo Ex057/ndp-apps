@@ -7,6 +7,8 @@ import { createRoute, Outlet } from "@tanstack/react-router";
 import { Card, Collapse, Flex, Form, Select, Typography } from "antd";
 import React, { useEffect } from "react";
 import PerformanceLegend from "../../../../components/performance-legend";
+import RequiredVoteSelect from "../../../../components/required-vote-select";
+import Spinner from "../../../../components/Spinner";
 import { VoteSchema } from "../../../../types";
 import { performanceLegendItems } from "../../../../utils";
 import { RootRoute } from "../../../__root";
@@ -25,8 +27,10 @@ function Component() {
     const { v, ou, pe, category, categoryOptions } =
         VoteProgramPerformanceRoute.useSearch();
     const [isFiltersOpen, setIsFiltersOpen] = React.useState(false);
-    const config = configurations[v]["data"];
+    const config = configurations[v ?? ""]["data"];
     const { votes } = RootRoute.useLoaderData();
+    const selectedVote = votes.find((vote) => vote.id === ou);
+    const validOu = selectedVote?.id ?? votes[0]?.id ?? "";
     const periods = config["financialYears"].map((year: string) =>
         createFixedPeriodFromPeriodId({
             calendar: "gregory",
@@ -36,6 +40,12 @@ function Component() {
 
     const { categories } = RootRoute.useLoaderData();
     useEffect(() => {
+        if (validOu && ou !== validOu) {
+            navigate({
+                replace: true,
+                search: (prev) => ({ ...prev, ou: validOu }),
+            });
+        }
         if (categoryOptions === undefined) {
             navigate({
                 search: (prev) => ({
@@ -44,7 +54,11 @@ function Component() {
                 }),
             });
         }
-    }, []);
+    }, [category, categoryOptions, categories, navigate, ou, validOu]);
+
+    if (!validOu || ou !== validOu) {
+        return <Spinner message="Loading vote..." />;
+    }
     return (
         <Flex
             vertical
@@ -98,11 +112,8 @@ function Component() {
                                         labelAlign="left"
                                         style={{ margin: 0, padding: 5 }}
                                     >
-                                        <Select
-                                            options={votes.map(({ name, id }) => ({
-                                                label: name,
-                                                value: id,
-                                            }))}
+                                        <RequiredVoteSelect
+                                            votes={votes}
                                             style={{ width: 400 }}
                                             value={ou}
                                             onChange={(value) =>
@@ -113,13 +124,6 @@ function Component() {
                                                     }),
                                                 })
                                             }
-                                            filterOption={(input, option) =>
-                                                String(option?.label ?? "")
-                                                    .toLowerCase()
-                                                    .includes(input.toLowerCase())
-                                            }
-                                            showSearch
-                                            allowClear
                                         />
                                     </Form.Item>
                                     <Form.Item
@@ -154,10 +158,10 @@ function Component() {
                 />
             </Card>
             <Typography.Title level={4} style={{ margin: 0 }}>
-                {votes.find((vote) => vote.id === ou)?.name} Program Performance
+                {selectedVote?.name} Program Performance
             </Typography.Title>
             <PerformanceLegend legendItems={performanceLegendItems} />
-            <Outlet />
+            <Outlet key={`${ou}-${pe}`} />
         </Flex>
     );
 }

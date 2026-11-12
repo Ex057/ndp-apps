@@ -9,22 +9,28 @@ export const useAnalyticsQuery = ({
     attributeValue,
     ndpVersion,
     queryByOu,
+    restrictToReportingRateProgrammes,
     specificLevel,
     ouIsFilter = true,
     isVision,
     goal,
     keyResultArea,
+    enforceDataSetOrgUnitAssignments,
+    organisationUnitIds,
 }: {
     engine: ReturnType<typeof useDataEngine>;
     search: GoalSearch;
     attributeValue?: string;
     ndpVersion: string;
     queryByOu?: boolean;
+    restrictToReportingRateProgrammes?: boolean;
     specificLevel?: number;
     ouIsFilter?: boolean;
     isVision?: boolean;
     goal?: string;
     keyResultArea?: string;
+    enforceDataSetOrgUnitAssignments?: boolean;
+    organisationUnitIds?: string[];
 }) => {
     const queryOptions = useMemo(
         () =>
@@ -34,15 +40,25 @@ export const useAnalyticsQuery = ({
                 attributeValue,
                 ndpVersion,
                 queryByOu,
+                restrictToReportingRateProgrammes,
                 specificLevel,
                 ouIsFilter,
                 isVision,
+                enforceDataSetOrgUnitAssignments,
+                organisationUnitIds,
             }),
         [
             engine,
             Object.values(search).sort().join(","),
             ndpVersion,
             attributeValue,
+            queryByOu,
+            restrictToReportingRateProgrammes,
+            specificLevel,
+            ouIsFilter,
+            isVision,
+            enforceDataSetOrgUnitAssignments,
+            organisationUnitIds?.join(","),
         ],
     );
     const { data } = useSuspenseQuery(queryOptions);

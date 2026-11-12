@@ -50,6 +50,7 @@ export default function CommentCellDisplay({
     }, [value?.explanation]);
 
     const saveComment = async (explanation: string) => {
+        if (disabled) return;
         const prev = await db.dataValues.get([de, aoc, coc, ou, pe]);
         if (prev) {
             await db.dataValues.put({

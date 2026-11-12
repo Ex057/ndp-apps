@@ -45,6 +45,18 @@ It correctly bundles React in production mode and optimizes the build for the be
 The build is minified and the filenames include the hashes.<br />
 A deployable `.zip` file can be found in `build/bundle`!
 
+Every successful build also creates a rollback copy in
+`../build-history/dhis-web-results-framework/`. The archive filename contains
+the East Africa Time build date, Git commit, and a `dirty` marker when the
+source had uncommitted changes. A SHA-256 checksum and `index.json` metadata
+file are stored beside the ZIP. Only the ten newest rollback builds are kept.
+
+To roll back, choose the required dated ZIP from that directory, verify it
+against its `.sha256` file, and upload the ZIP through DHIS2 App Management.
+The normal app name and internal version are preserved, so the rollback does
+not install a separately named application. Local rollback history is ignored
+by Git and remains available only on the machine where it was built.
+
 See the section about [building](https://platform.dhis2.nu/#/scripts/build) for more information.
 
 ### `yarn deploy`

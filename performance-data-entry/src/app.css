@@ -5,3 +5,206 @@
 .ant-input-number-input {
   text-align: center !important;
 }
+
+.results-print-header,
+.print-only {
+  display: none;
+}
+
+.results-print-preview {
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+}
+
+.results-print-preview .results-print-header,
+.results-print-preview .print-only {
+  display: block;
+}
+
+.results-print-preview .print-hidden {
+  display: none !important;
+}
+
+.results-print-preview .ant-table-body {
+  max-height: none !important;
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .app-shell-adapter {
+    display: none !important;
+  }
+
+  .results-print-preview-modal,
+  .results-print-preview-modal *,
+  .results-print-preview .results-print-area,
+  .results-print-preview .results-print-area * {
+    visibility: visible !important;
+  }
+
+  .results-print-preview-modal {
+    position: absolute !important;
+    inset: 0;
+    width: 100%;
+  }
+
+  .results-print-preview-modal .ant-modal-mask,
+  .results-print-preview-modal .ant-modal-header,
+  .results-print-preview-modal .ant-modal-footer,
+  .results-print-preview-modal .ant-modal-close {
+    display: none !important;
+  }
+
+  .results-print-preview-modal .ant-modal-wrap {
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  .results-print-preview-modal .ant-modal {
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .results-print-preview-modal .ant-modal-content,
+  .results-print-preview-modal .ant-modal-body,
+  .results-print-preview {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .results-print-preview .results-print-area {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 3mm 3mm !important;
+  }
+
+  .ant-splitter,
+  .ant-splitter-panel {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .results-print-header,
+  .print-only {
+    display: block !important;
+  }
+
+  .results-print-header {
+    margin-bottom: 14px;
+    break-after: avoid;
+  }
+
+  .results-print-header h3 {
+    margin: 0 0 10px !important;
+    text-align: center;
+  }
+
+  .results-print-metadata {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+
+  .results-print-metadata > div {
+    border: 1px solid #777;
+    padding: 6px 8px;
+  }
+
+  .results-print-metadata dt {
+    font-weight: bold;
+  }
+
+  .results-print-metadata dd {
+    margin: 3px 0 0;
+  }
+
+  .print-hidden,
+  .print-hidden * {
+    display: none !important;
+  }
+
+  .results-print-area .ant-flex,
+  .results-print-area .ant-table-wrapper,
+  .results-print-area .ant-table,
+  .results-print-area .ant-table-container,
+  .results-print-area .ant-table-content,
+  .results-print-area .ant-table-body {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .results-form-section {
+    display: block !important;
+    margin-bottom: 12px;
+    break-inside: auto;
+  }
+
+  .results-print-area table {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    border: 1px solid #7a8793 !important;
+    font-size: 9pt;
+  }
+
+  .results-print-area tr,
+  .results-print-area td,
+  .results-print-area th {
+    break-inside: avoid;
+  }
+
+  .results-print-area .ant-table-container {
+    border: 0 !important;
+  }
+
+  .results-print-area .ant-table-thead > tr > th,
+  .results-print-area .ant-table-tbody > tr > td {
+    box-sizing: border-box !important;
+    border: 1px solid #7a8793 !important;
+  }
+
+  .results-print-area .ant-table-thead {
+    display: table-header-group;
+  }
+
+  .results-print-area .ant-table-cell-fix-left,
+  .results-print-area .ant-table-cell-fix-right {
+    position: static !important;
+  }
+
+  .results-print-area .ant-input,
+  .results-print-area .ant-input-number,
+  .results-print-area .ant-select-selector {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .results-print-explanations {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .results-print-explanations > div + div {
+    margin-top: 4px;
+  }
+}

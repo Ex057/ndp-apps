@@ -30,6 +30,7 @@ import { VoteFlashReportRoute } from "./route";
 
 import { ExcelBuilder } from "../../../../excel-builder";
 import { PDFBuilder } from "../../../../pdf-builder";
+import { isDataElementAssignedToMatchingProgrammeDataSet } from "../../../../utils/data-element-assignments";
 
 const quarterOrder = { Q1: "Q3", Q2: "Q4", Q3: "Q1", Q4: "Q2" };
 
@@ -94,7 +95,7 @@ function Component() {
     });
 
     const {
-        data: outputs,
+        data: rawOutputs,
         dimensions: outputDimensions,
         items: outputItems,
     } = useAnalyticsQuery({
@@ -109,9 +110,12 @@ function Component() {
         ndpVersion: v,
         attributeValue: "output",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [ou],
     });
 
-    const { data: programData } = useAnalyticsQuery({
+    const { data: rawProgramData } = useAnalyticsQuery({
         engine,
         search: {
             pe: [pe],
@@ -122,10 +126,13 @@ function Component() {
         },
         ndpVersion: v,
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [ou],
     });
 
     const {
-        data: outcomes,
+        data: rawOutcomes,
         dimensions: outcomeDimensions,
         items: outcomeItems,
     } = useAnalyticsQuery({
@@ -140,10 +147,13 @@ function Component() {
         ndpVersion: v,
         attributeValue: "outcome",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [ou],
     });
 
     const {
-        data: intermediateOutcomes,
+        data: rawIntermediateOutcomes,
         dimensions: intermediateOutcomeDimensions,
         items: intermediateOutcomeItems,
     } = useAnalyticsQuery({
@@ -158,10 +168,13 @@ function Component() {
         ndpVersion: v,
         attributeValue: "intermediateOutcome",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [ou],
     });
 
     const {
-        data: actions,
+        data: rawActions,
         dimensions: actionDimensions,
         items: actionItems,
     } = useAnalyticsQuery({
@@ -176,7 +189,42 @@ function Component() {
         ndpVersion: v,
         attributeValue: "action",
         queryByOu: true,
+        restrictToReportingRateProgrammes: true,
+        enforceDataSetOrgUnitAssignments: true,
+        organisationUnitIds: [ou],
     });
+
+    const filterForSelectedVote = React.useCallback(
+        (rows: AnalyticsData[]) =>
+            rows.filter((row) =>
+                isDataElementAssignedToMatchingProgrammeDataSet(
+                    row as unknown as Record<string, unknown>,
+                    ou,
+                    v,
+                ),
+            ),
+        [ou, v],
+    );
+    const outputs = React.useMemo(
+        () => filterForSelectedVote(rawOutputs),
+        [filterForSelectedVote, rawOutputs],
+    );
+    const programData = React.useMemo(
+        () => filterForSelectedVote(rawProgramData),
+        [filterForSelectedVote, rawProgramData],
+    );
+    const outcomes = React.useMemo(
+        () => filterForSelectedVote(rawOutcomes),
+        [filterForSelectedVote, rawOutcomes],
+    );
+    const intermediateOutcomes = React.useMemo(
+        () => filterForSelectedVote(rawIntermediateOutcomes),
+        [filterForSelectedVote, rawIntermediateOutcomes],
+    );
+    const actions = React.useMemo(
+        () => filterForSelectedVote(rawActions),
+        [filterForSelectedVote, rawActions],
+    );
 
     const outcomeData = processByPerformance({
         dataElements: outcomes,

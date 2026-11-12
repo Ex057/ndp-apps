@@ -7,6 +7,8 @@ import { createRoute, Outlet } from "@tanstack/react-router";
 import { Card, Collapse, Flex, Form, Select, Typography } from "antd";
 import React from "react";
 import PerformanceLegend from "../../../../components/performance-legend";
+import RequiredVoteSelect from "../../../../components/required-vote-select";
+import Spinner from "../../../../components/Spinner";
 import { FlashReportSchema } from "../../../../types";
 import { performanceLegendItems } from "../../../../utils";
 import { RootRoute } from "../../../__root";
@@ -30,6 +32,17 @@ function Component() {
     const config = configurations[v ?? ""]["data"];
 
     const { votes } = RootRoute.useLoaderData();
+    const selectedVote = votes.find((vote) => vote.id === ou);
+    const validOu = selectedVote?.id ?? votes[0]?.id ?? "";
+
+    React.useEffect(() => {
+        if (validOu && ou !== validOu) {
+            navigate({
+                replace: true,
+                search: (prev) => ({ ...prev, ou: validOu }),
+            });
+        }
+    }, [navigate, ou, validOu]);
 
     const periods = config["financialYears"].map((year: string) =>
         createFixedPeriodFromPeriodId({
@@ -37,6 +50,10 @@ function Component() {
             periodId: year,
         }),
     );
+
+    if (!validOu || ou !== validOu) {
+        return <Spinner message="Loading vote..." />;
+    }
     return (
         <Flex
             vertical
@@ -90,11 +107,8 @@ function Component() {
                                         labelAlign="left"
                                         style={{ margin: 0, padding: 5 }}
                                     >
-                                        <Select
-                                            options={votes.map(({ name, id }) => ({
-                                                label: name,
-                                                value: id,
-                                            }))}
+                                        <RequiredVoteSelect
+                                            votes={votes}
                                             style={{ width: 400 }}
                                             value={ou}
                                             onChange={(value) =>
@@ -105,13 +119,6 @@ function Component() {
                                                     }),
                                                 })
                                             }
-                                            filterOption={(input, option) =>
-                                                String(option?.label ?? "")
-                                                    .toLowerCase()
-                                                    .includes(input.toLowerCase())
-                                            }
-                                            showSearch
-                                            allowClear
                                         />
                                     </Form.Item>
                                     <Form.Item
@@ -149,10 +156,10 @@ function Component() {
                 Consolidated Performance Report
             </Typography.Title>
             <Typography.Title level={5} style={{ margin: 0 }}>
-                {votes.find((vote) => vote.id === ou)?.name}
+                {selectedVote?.name}
             </Typography.Title>
             <PerformanceLegend legendItems={performanceLegendItems} />
-            <Outlet />
+            <Outlet key={`${ou}-${pe}`} />
         </Flex>
     );
 }

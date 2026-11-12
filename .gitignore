@@ -3,6 +3,14 @@ node_modules/
 .d2
 src/locales
 build
+/build-history/
+
+# Local planning, generated output, and temporary files
+.DS_Store
+guidev2.md
+next_action.md
+/output/
+/tmp/
 
 dhis-web-results-framework/guide.md
 progress_report.md

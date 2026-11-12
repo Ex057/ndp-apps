@@ -5,7 +5,11 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { orderBy } from "lodash";
 import React, { useMemo, useState } from "react";
 import { db } from "../db";
-import { orgUnitQueryOptions } from "../query-options";
+import {
+    orgUnitHierarchyQueryOptions,
+    orgUnitQueryOptions,
+} from "../query-options";
+import type { OrgUnit } from "../types";
 import { RootRoute } from "../routes/__root";
 
 export function OrgUnitSelect({
@@ -29,7 +33,7 @@ export function OrgUnitSelect({
     const { ou: defaultOrgUnit } = RootRoute.useLoaderData();
     const queryClient = useQueryClient();
     const organisationUnits = useLiveQuery(() => db.dataViewOrgUnits.toArray());
-    const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+    const [expandedKeys, setExpandedKeys] = useState<Array<string | number>>([]);
     const [isHydratingTree, setIsHydratingTree] = useState(false);
     const hydratedRootsRef = React.useRef<Set<string>>(new Set());
 
@@ -39,6 +43,50 @@ export function OrgUnitSelect({
             orgUnitQueryOptions(defaultOrgUnit, engine),
         );
     }, [defaultOrgUnit, engine, queryClient]);
+
+    React.useEffect(() => {
+        const selectedIds = Array.isArray(value)
+            ? value.filter((id): id is string => Boolean(id))
+            : value
+              ? [value]
+              : [];
+        const knownIds = new Set(
+            (organisationUnits ?? []).map((orgUnit) => orgUnit.id),
+        );
+        const missingIds = selectedIds.filter((id) => !knownIds.has(id));
+
+        if (missingIds.length === 0) return;
+
+        let cancelled = false;
+        const flattenTree = (nodes: OrgUnit[]): OrgUnit[] =>
+            nodes.flatMap(({ children, ...node }) => [
+                node as OrgUnit,
+                ...flattenTree(children ?? []),
+            ]);
+
+        void (async () => {
+            setIsHydratingTree(true);
+            try {
+                for (const selectedId of missingIds) {
+                    const hierarchy = await queryClient.ensureQueryData(
+                        orgUnitHierarchyQueryOptions(engine, selectedId),
+                    );
+                    if (!cancelled && hierarchy.length > 0) {
+                        await db.dataViewOrgUnits.bulkPut(flattenTree(hierarchy));
+                    }
+                }
+            } catch {
+                // Keep the filter usable when metadata cannot be refreshed.
+                // The report error boundary handles broader network failures.
+            } finally {
+                if (!cancelled) setIsHydratingTree(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [engine, organisationUnits, queryClient, value]);
 
     React.useEffect(() => {
         const rootOrgUnits =
@@ -183,6 +231,16 @@ export function OrgUnitSelect({
         );
     }, [expandedKeys, filteredTreeData, searchValue]);
 
+    const selectedIds = Array.isArray(value)
+        ? value.filter((id): id is string => Boolean(id))
+        : value
+          ? [value]
+          : [];
+    const knownIds = new Set(
+        (organisationUnits ?? []).map((orgUnit) => orgUnit.id),
+    );
+    const selectedLabelsReady = selectedIds.every((id) => knownIds.has(id));
+
     const select = (
         <TreeSelect
             disabled={disabled}
@@ -190,8 +248,12 @@ export function OrgUnitSelect({
             showSearch
             allowClear
             style={{ width: "100%", flex: 1 }}
-            value={value}
-            placeholder="Please select"
+            value={selectedLabelsReady ? value : undefined}
+            placeholder={
+                selectedLabelsReady
+                    ? "Please select"
+                    : "Loading organisation unit..."
+            }
             onChange={handleChange}
             loadData={onLoadData}
             treeData={orderBy(filteredTreeData, "title", "asc")}
